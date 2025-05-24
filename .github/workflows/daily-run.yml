@@ -26,3 +26,11 @@ jobs:
     - name: Run script
       run: python daily_US.py
 
+    - name: Commit and push results
+      run: |
+        git config --global user.name "github-actions"
+        git config --global user.email "github-actions@github.com"
+        git add data/*.csv charts/*.png
+        git commit -m "📈 Auto update: $(date +'%Y-%m-%d')"
+        git push
+
