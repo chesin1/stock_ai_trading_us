@@ -2,8 +2,8 @@ name: Daily AI Stock Trading Simulation
 
 on:
   schedule:
-    - cron: '0 21 * * *'  # 한국 시간 오전 6시 (UTC 기준 21시)
-  workflow_dispatch:  # 수동 실행도 가능
+    - cron: '0 21 * * *'
+  workflow_dispatch:
 
 jobs:
   run-daily-script:
