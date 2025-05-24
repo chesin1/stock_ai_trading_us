@@ -1,0 +1,27 @@
+name: Daily AI Stock Trading Simulation
+
+on:
+  schedule:
+    - cron: '0 21 * * *'  # 한국 시간 오전 6시 (UTC 기준 21시)
+  workflow_dispatch:  # 수동 실행도 가능
+
+jobs:
+  run-daily-script:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run script
+      run: python daily_US.py
