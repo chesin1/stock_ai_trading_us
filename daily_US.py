@@ -12,6 +12,9 @@ from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import Dense, LSTM
 import numpy as np
 import matplotlib.pyplot as plt
+from tensorflow.keras.layers import Dense, LSTM, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras import backend as K
 
 # ------------------------
 # 설정
@@ -359,11 +362,19 @@ def simulate_combined_trading_simple_formatted(df):
     result_df = pd.DataFrame(history)
     if not result_df.empty:
         result_df = result_df[["날짜", "모델", "티커", "예측 수익률", "현재가", "매수(매도)", "잔여 현금", "총 자산"]]
+    
+        # 🔥 실제 수익률 및 정확도 추가
+        result_df = result_df.merge(
+            df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
+            on=["날짜", "티커"],
+            how="left"
+        )
+        result_df["Return_1D"] = result_df["Return_1D"] * 10000
+        result_df["Prediction_Match"] = (result_df["예측 수익률"] * result_df["Return_1D"]) > 0
+        result_df["Prediction_Accuracy(%)"] = result_df["Prediction_Match"].apply(lambda x: 100 if x else 0)
+    
         os.makedirs("data", exist_ok=True)
         result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False)
-        print(f"[3단계] 시뮬레이션 결과 저장 완료 → {SIMULATION_FILE_SIMPLE_FORMATTED}")
-    else:
-        print("[3단계] 시뮬레이션 결과 없음")
 
     final_assets = {}
     for model, port in portfolios.items():
@@ -393,64 +404,53 @@ def simulate_combined_trading_simple_formatted(df):
 
     return result_df, final_assets
 
+def export_final_portfolios(final_assets):
+    os.makedirs("data", exist_ok=True)
+    for model, info in final_assets.items():
+        rows = []
+        for ticker, details in info["보유 종목"].items():
+            rows.append({
+                "Ticker": ticker,
+                "Shares": details["보유 수량"],
+                "Current Price": details["현재가"],
+                "Evaluation Value": details["평가 금액"]
+            })
+        if rows:
+            df_model = pd.DataFrame(rows)
+            df_model.to_csv(f"data/final_portfolio_{model}.csv", index=False)
+
+
+
 # 4단계: 시각화 (간단한 시뮬레이션 결과로는 시각화가 제한될 수 있습니다)
 # ------------------------
-def visualize_trades_simple(df, sim_df_simple):
-    print("[4단계] 시각화 시작")
-    os.makedirs("charts", exist_ok=True)
-    
-    # ✅ stock_df 날짜는 timezone 없음
-    df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
+def plot_prediction_vs_actual(df, model_name, ticker):
+    """
+    Compare predicted vs actual close prices for a ticker-model combination.
+    """
+    df = df[df["Ticker"] == ticker].copy()
+    df = df[df["Date"] >= pd.to_datetime("2025-05-01")].sort_values("Date")
 
-    if sim_df_simple.empty:
-        print("  - 시각화할 시뮬레이션 결과가 없습니다.")
+    pred_col = f"예측종가_{model_name}"
+    if df.empty or pred_col not in df.columns:
         return
 
-    # ✅ sim_df_simple["날짜"] 안전하게 처리
-    sim_df_simple["날짜"] = pd.to_datetime(sim_df_simple["날짜"])
-    if sim_df_simple["날짜"].dt.tz is not None:
-        sim_df_simple["날짜"] = sim_df_simple["날짜"].dt.tz_localize(None)
+    safe_ticker = ticker.replace("-", "_")
 
-    for ticker in df["Ticker"].unique():
-        fig, ax = plt.subplots(figsize=(12, 6))
-        stock_df = df[df["Ticker"] == ticker].sort_values(by="Date")
-        ax.plot(stock_df["Date"], stock_df["Close"], label="Close Price", alpha=0.6)
+    plt.figure(figsize=(12, 6))
+    plt.plot(df["Date"], df["Close"], label="Actual Close", color="blue", linewidth=2)
+    plt.plot(df["Date"], df[pred_col], label=f"Predicted Close ({model_name})", color="orange", linestyle="--", linewidth=2)
 
-        for model in sim_df_simple["모델"].unique():
-            trades = sim_df_simple[(sim_df_simple["티커"] == ticker) & (sim_df_simple["모델"] == model)].copy()
+    plt.title(f"{ticker} - {model_name} Prediction vs Actual", fontsize=14)
+    plt.xlabel("Date", fontsize=12)
+    plt.ylabel("Price", fontsize=12)
+    plt.legend()
+    plt.grid(True)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.savefig(f"charts/predicted_vs_actual_{model_name}_{safe_ticker}.png")
+    plt.close()
 
-            if trades.empty:
-                continue
-
-            # ✅ merge 시 타임존 제거된 날짜 사용
-            trades = pd.merge(
-                trades,
-                stock_df[["Date", "Close"]].rename(columns={"Close": "Actual_Close"}),
-                left_on="날짜",
-                right_on="Date",
-                how="left"
-            )
-
-            if 'Actual_Close' in trades.columns:
-                buys = trades[trades["매수(매도)"].str.contains("BUY", na=False)]
-                sells = trades[trades["매수(매도)"].str.contains("SELL", na=False)]
-
-                ax.scatter(buys["날짜"], buys["Actual_Close"], label=f"{model} BUY", marker="^", color="green", zorder=5)
-                ax.scatter(sells["날짜"], sells["Actual_Close"], label=f"{model} SELL", marker="v", color="red", zorder=5)
-            else:
-                print(f"⚠️ 경고: '{ticker}'의 시각화에서 'Actual_Close'를 찾을 수 없습니다.")
-
-        ax.set_title(f"{ticker} - AI Trading Signals")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Price")
-        ax.legend()
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        plt.savefig(f"charts/{ticker}_trades_simple_{model}.png")
-        plt.close()
-
-    print("[4단계] 시각화 완료 → charts/*.png")
-
+    print("[Step 4] All charts saved → charts/*.png")
 
 # ------------------------
 # 실행
@@ -460,37 +460,59 @@ if __name__ == "__main__":
     if merged_df is not None:
         merged_df["Date"] = pd.to_datetime(merged_df["Date"])
         latest_date = merged_df["Date"].max().date()
-        print(f"📅 수집된 데이터의 가장 결정 날짜: {latest_date}")
+        print(f"[✓] Latest date in collected data: {latest_date}")
 
         predicted_df = predict_ai_scores(merged_df.copy())
 
         if not predicted_df.empty:
+            # Step 1: Run simulation
             simulation_results_simple, final_assets = simulate_combined_trading_simple_formatted(predicted_df.copy())
 
             if not simulation_results_simple.empty:
-                # 간단한 시뮬리언 결과로는 보개화는 ì \xec96b음
-                # 거래 시점만 표시하는 시간간화 함수 사용
-                visualize_trades_simple(merged_df.copy(), simulation_results_simple.copy())
+                # Step 2: Add Return_1D, Accuracy info
+                simulation_results_simple = simulation_results_simple.merge(
+                    merged_df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
+                    on=["날짜", "티커"],
+                    how="left"
+                )
+                simulation_results_simple["Return_1D"] = simulation_results_simple["Return_1D"] * 10000
+                simulation_results_simple["Prediction_Match"] = (simulation_results_simple["예측 수익률"] * simulation_results_simple["Return_1D"]) > 0
+                simulation_results_simple["Prediction_Accuracy(%)"] = simulation_results_simple["Prediction_Match"].apply(lambda x: 100 if x else 0)
 
-            print("\n📊 [예측 결과 미리보기 - 마지막 20행]")
-            print(predicted_df.tail(20))
+                simulation_results_simple.to_csv("data/simulation_result_simple_with_accuracy.csv", index=False)
+                print("[✓] Saved simulation result with accuracy info → simulation_result_simple_with_accuracy.csv")
 
-            print("\n📈 [시뮬리언 결과 미리보기 - 첫번째 2행]")
-            print(simulation_results_simple.to_string(index=False))
+                # Step 3: Save portfolios
+                export_final_portfolios(final_assets)
+                print("[✓] Saved final portfolios by model")
 
-            print("\n💼 [최종 포트폴리오 자사현황]")
-            if not simulation_results_simple.empty:
-                for model, info in final_assets.items():
-                    print(f"\n📌 모델: {model}")
-                    print(f"  - 총 자산: {info['총 자산']}")
-                    print(f"  - 현금 잔액: {info['현금 잔액']}")
-                    print(f"  - 보유 종목 수: {info['보유 종목 수']}")
+                # Step 4: Visualization (prediction vs actual)
+                for model in ["GB_1D", "GB_20D", "Dense_LSTM"]:
+                    col_name = f"예측종가_{model}"
+                    if col_name in predicted_df.columns:
+                        for ticker in predicted_df["Ticker"].unique():
+                            plot_prediction_vs_actual(predicted_df.copy(), model, ticker)
 
-                    if info["보유 종목"]:
-                        print("  - 보유 종목:")
-                        for ticker, details in info["보유 종목"].items():
-                            print(f"     ▸ {ticker}: 수량={details['보유 수량']}주, 현재가=${details['현재가']}, 평가금액=${details['평가 금액']}")
-                    else:
-                        print("  - 보유 종목 없음")
+                print("[✓] Saved prediction vs actual charts → charts/")
+
+            # Preview
+            print("\n📊 [Prediction Preview - Last 5 Rows]")
+            print(predicted_df.tail(5))
+
+            print("\n📈 [Simulation Result Preview - First 2 Rows]")
+            print(simulation_results_simple.head(2).to_string(index=False))
+
+            print("\n💼 [Final Portfolio Summary]")
+            for model, info in final_assets.items():
+                print(f"\n📌 Model: {model}")
+                print(f"  - Total Asset: ${info['총 자산']}")
+                print(f"  - Cash Balance: ${info['현금 잔액']}")
+                print(f"  - Number of Holdings: {info['보유 종목 수']}")
+                if info["보유 종목"]:
+                    print("  - Holdings:")
+                    for ticker, details in info["보유 종목"].items():
+                        print(f"     ▸ {ticker}: {details['보유 수량']} shares, Price=${details['현재가']}, Value=${details['평가 금액']}")
+                else:
+                    print("  - No holdings.")
         else:
-            print("시뮬리언 결과가 없습니다.")
+            print("[X] No prediction result, simulation aborted.")
