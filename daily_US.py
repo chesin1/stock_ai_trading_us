@@ -243,6 +243,8 @@ def predict_ai_scores(df):
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
     result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
 
+    result_df["Return_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
+    result_df["Return_1D"] = (result_df["Return_1D"] - result_df["Close"]) / result_df["Close"]
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
