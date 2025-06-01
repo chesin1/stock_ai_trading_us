@@ -243,20 +243,12 @@ def predict_ai_scores(df):
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
     result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
+    result_df = pd.merge(result_df, df[["Date", "Ticker", "Return_1D"]], on=["Date", "Ticker"], how="left")
 
-# Return_1D 보장 생성
-    if "Return_1D" not in result_df.columns or result_df["Return_1D"].isnull().all():
-        result_df["Target_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
-        result_df["Return_1D"] = (result_df["Target_1D"] - result_df["Close"]) / result_df["Close"]
-    
-    result_df.to_csv(PREDICTED_FILE, index=False)
-
-    # ✅ 기존 df에서 계산된 Return_1D를 merge
-    base_return = df[["Date", "Ticker", "Return_1D"]].copy()
-    result_df = pd.merge(result_df, base_return, on=["Date", "Ticker"], how="left")
-    
-    # ✅ NaN 보정: ffill 후 bfill
+    # ✅ 결측치 보정만 수행
     result_df["Return_1D"] = result_df["Return_1D"].ffill().bfill()
+
+
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
@@ -279,10 +271,6 @@ def simulate_combined_trading_simple_formatted(df):
     df_sorted = df_sorted.fillna(method='ffill').fillna(method='bfill')
     df_sorted["Date"] = pd.to_datetime(df_sorted["Date"]).dt.tz_localize(None)
     df_sorted = df_sorted[df_sorted["Date"] >= pd.to_datetime("2024-05-01")]
-
-    if "Return_1D" not in df_sorted.columns:
-        df_sorted["Target_1D"] = df_sorted.groupby("Ticker")["Close"].shift(-1)
-        df_sorted["Return_1D"] = (df_sorted["Target_1D"] - df_sorted["Close"]) / df_sorted["Close"]
 
     if df_sorted.empty:
         print("  - 시뮬레이션할 데이터가 없습니다.")
