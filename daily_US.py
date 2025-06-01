@@ -481,7 +481,7 @@ if __name__ == "__main__":
                     on=["날짜", "티커"],
                     how="left"
                 )
-                )
+                
                 simulation_results_simple["Return_1D"] = simulation_results_simple["Return_1D"] * 10000
                 simulation_results_simple["Prediction_Match"] = (simulation_results_simple["예측 수익률"] * simulation_results_simple["Return_1D"]) > 0
                 simulation_results_simple["Prediction_Accuracy(%)"] = simulation_results_simple["Prediction_Match"].apply(lambda x: 100 if x else 0)
