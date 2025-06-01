@@ -9,12 +9,18 @@ from sklearn.ensemble import GradientBoostingRegressor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import train_test_split
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM
+from tensorflow.keras.layers import Dense, LSTM, Dropout, BatchNormalization
 import numpy as np
 import matplotlib.pyplot as plt
-from tensorflow.keras.layers import Dense, LSTM, Dropout, BatchNormalization
+import difflib
+import xml.etree.ElementTree as ET
+import requests
+from datetime import datetime
 from tensorflow.keras.callbacks import EarlyStopping
+# import matplotlib.font_manager as fm
+import tensorflow as tf
 from tensorflow.keras import backend as K
+
 
 # ------------------------
 # 설정
