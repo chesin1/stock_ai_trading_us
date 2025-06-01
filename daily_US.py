@@ -266,6 +266,10 @@ def simulate_combined_trading_simple_formatted(df):
     df_sorted["Date"] = pd.to_datetime(df_sorted["Date"]).dt.tz_localize(None)
     df_sorted = df_sorted[df_sorted["Date"] >= pd.to_datetime("2024-05-01")]
 
+    if "Return_1D" not in df_sorted.columns:
+        df_sorted["Target_1D"] = df_sorted.groupby("Ticker")["Close"].shift(-1)
+        df_sorted["Return_1D"] = (df_sorted["Target_1D"] - df_sorted["Close"]) / df_sorted["Close"]
+
     if df_sorted.empty:
         print("  - 시뮬레이션할 데이터가 없습니다.")
         return pd.DataFrame()
@@ -280,7 +284,6 @@ def simulate_combined_trading_simple_formatted(df):
             portfolio = portfolios[model]
             current_holdings = list(portfolio["holding"].keys())
 
-            # 1. 매도 판단
             for ticker in current_holdings:
                 holding_info = portfolio["holding"][ticker]
                 holding_stock_data = date_df[date_df["Ticker"] == ticker]
@@ -305,9 +308,6 @@ def simulate_combined_trading_simple_formatted(df):
                             portfolio["holding"][ticker]["shares"] -= shares_to_sell
 
                             buy_price = holding_info["buy_price"]
-                            profit = (sell_price * 0.999 - buy_price) * shares_to_sell
-                            profit_str = f"{profit:+.2f}달러"
-
                             total_asset_after_sell = portfolio["capital"] + sum(
                                 h["shares"] * current_price for h in portfolio["holding"].values()
                             )
@@ -326,7 +326,6 @@ def simulate_combined_trading_simple_formatted(df):
                             if portfolio["holding"][ticker]["shares"] <= 0:
                                 del portfolio["holding"][ticker]
 
-            # 2. 매수 판단 (예측 수익률 > 1%인 상위 4개 종목)
             top_candidates = date_df[date_df[score_col] > 0.01].sort_values(by=score_col, ascending=False).head(2)
 
             for _, row in top_candidates.iterrows():
@@ -368,19 +367,23 @@ def simulate_combined_trading_simple_formatted(df):
     result_df = pd.DataFrame(history)
     if not result_df.empty:
         result_df = result_df[["날짜", "모델", "티커", "예측 수익률", "현재가", "매수(매도)", "잔여 현금", "총 자산"]]
-    
-        # 🔥 실제 수익률 및 정확도 추가
         result_df = result_df.merge(
-            df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
+            df_sorted[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
             on=["날짜", "티커"],
             how="left"
         )
-        result_df["Return_1D"] = result_df["Return_1D"] * 10000
-        result_df["Prediction_Match"] = (result_df["예측 수익률"] * result_df["Return_1D"]) > 0
-        result_df["Prediction_Accuracy(%)"] = result_df["Prediction_Match"].apply(lambda x: 100 if x else 0)
-    
+        result_df["실제 수익률"] = result_df["Return_1D"] * 10000
+        result_df["예측 방향 일치"] = (result_df["예측 수익률"] * result_df["실제 수익률"]) > 0
+        result_df["예측 정확도(%)"] = result_df.apply(
+            lambda row: round(
+                max(0.0, (1 - abs(row["예측 수익률"] - row["실제 수익률"]) / (abs(row["실제 수익률"]) + 1e-6))) * 100,
+                2
+            ),
+            axis=1
+        )
+
         os.makedirs("data", exist_ok=True)
-        result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False)
+        result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False, encoding="utf-8-sig")
 
     final_assets = {}
     for model, port in portfolios.items():
