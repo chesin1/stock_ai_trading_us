@@ -235,16 +235,28 @@ def predict_ai_scores(df):
 
     if not all_preds:
         print("❌ 예측 결과 없음. 시뮬레이션 불가")
-        return pd.DataFrame()
-
+        return pd.DataFrame(columns=["Date", "Ticker", "Close", "Return_1D"])  # ← 빈 컬럼 포함해 반환
+    
     result_df = pd.concat(all_preds, ignore_index=True)
-
+    
+    # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
     result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
 
-    result_df["Return_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
-    result_df["Return_1D"] = (result_df["Return_1D"] - result_df["Close"]) / result_df["Close"]
+# Return_1D 보장 생성
+    if "Return_1D" not in result_df.columns or result_df["Return_1D"].isnull().all():
+        result_df["Target_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
+        result_df["Return_1D"] = (result_df["Target_1D"] - result_df["Close"]) / result_df["Close"]
+    
+    result_df.to_csv(PREDICTED_FILE, index=False)
+
+    # ✅ 기존 df에서 계산된 Return_1D를 merge
+    base_return = df[["Date", "Ticker", "Return_1D"]].copy()
+    result_df = pd.merge(result_df, base_return, on=["Date", "Ticker"], how="left")
+    
+    # ✅ NaN 보정: ffill 후 bfill
+    result_df["Return_1D"] = result_df["Return_1D"].ffill().bfill()
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
