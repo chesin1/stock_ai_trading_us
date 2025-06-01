@@ -185,7 +185,7 @@ def predict_ai_scores(df):
     X_lstm_train = np.array(X_lstm_train)
     y_lstm_train = np.array(y_lstm_train)
 
-    dense_lstm_model = build_dense_lstm((SEQUENCE_LENGTH, X_lstm_train.shape[2]))
+    dense_lstm_model = build_dense_lstm(X_lstm_train.shape[1:])
     early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
     dense_lstm_model.fit(X_lstm_train, y_lstm_train, epochs=30, batch_size=16, validation_split=0.1, callbacks=[early_stop], verbose=1)
 
@@ -477,9 +477,10 @@ if __name__ == "__main__":
             if not simulation_results_simple.empty:
                 # Step 2: Add Return_1D, Accuracy info
                 simulation_results_simple = simulation_results_simple.merge(
-                    merged_df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
+                    predicted_df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
                     on=["날짜", "티커"],
                     how="left"
+                )
                 )
                 simulation_results_simple["Return_1D"] = simulation_results_simple["Return_1D"] * 10000
                 simulation_results_simple["Prediction_Match"] = (simulation_results_simple["예측 수익률"] * simulation_results_simple["Return_1D"]) > 0
