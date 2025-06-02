@@ -117,10 +117,34 @@ def update_stock_and_macro_data():
 # ------------------------
 # 2단계: AI 모델 예측
 # ------------------------
+def reset_seed():
+    np.random.seed(42)
+    tf.random.set_seed(42)
+
+# 모델 생성 함수
+def build_gb_1d():
+    return GradientBoostingRegressor(n_estimators=200, learning_rate=0.08, max_depth=4, subsample=0.8)
+
+def build_gb_20d():
+    return GradientBoostingRegressor(n_estimators=150, learning_rate=0.04, max_depth=6, subsample=0.9)
+
+def build_dense_lstm(input_shape):
+    K.clear_session()
+    reset_seed()
+    model = Sequential([
+        LSTM(128, activation='tanh', input_shape=input_shape),
+        BatchNormalization(),
+        Dense(64, activation='relu'),
+        Dropout(0.3),
+        Dense(1)
+    ])
+    optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
+    model.compile(optimizer=optimizer, loss='mse')
+    return model
+
 def predict_ai_scores(df):
     print("[2단계] AI 예측 시작")
 
-    # 날짜 형식 통일 및 중복 컬럼 제거
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
 
@@ -132,90 +156,101 @@ def predict_ai_scores(df):
     df["Return"] = df.groupby("Ticker")["Close"].pct_change()
     df = df.ffill().bfill()
 
-    # 훈련 데이터
+    # 훈련 데이터 분리
     train_df = df[df["Date"] <= pd.to_datetime("2024-12-31")].copy()
     X_train = train_df[FEATURE_COLUMNS].fillna(0)
     y_train_1d = train_df["Return_1D"]
     y_train_20d = train_df["Return_20D"]
 
-    # 예측 결과 저장 리스트
-    all_preds = []
+    # 모델 학습
+    gb_1d = build_gb_1d()
+    gb_1d.fit(X_train, y_train_1d)
+
+    gb_20d = build_gb_20d()
+    gb_20d.fit(X_train, y_train_20d)
+
+    # Dense-LSTM 훈련
+    SEQUENCE_LENGTH = 10
+    scaler = MinMaxScaler()
+    X_lstm_train, y_lstm_train = [], []
+
+    for ticker in train_df["Ticker"].unique():
+        temp_df = train_df[train_df["Ticker"] == ticker].copy()
+        X_temp = temp_df[FEATURE_COLUMNS].fillna(0).values
+        y_temp = temp_df["Return_1D"].values
+        X_scaled = scaler.fit_transform(X_temp)
+
+        for i in range(SEQUENCE_LENGTH, len(X_scaled)):
+            X_lstm_train.append(X_scaled[i - SEQUENCE_LENGTH:i])
+            y_lstm_train.append(y_temp[i])
+
+    X_lstm_train = np.array(X_lstm_train)
+    y_lstm_train = np.array(y_lstm_train)
+
+    dense_lstm_model = build_dense_lstm((SEQUENCE_LENGTH, X_lstm_train.shape[2]))
+    early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+    dense_lstm_model.fit(X_lstm_train, y_lstm_train, epochs=30, batch_size=16, validation_split=0.1, callbacks=[early_stop], verbose=1)
+
+    # 예측 시작
     test_dates = df[df["Date"] >= pd.to_datetime("2025-05-01")]["Date"].drop_duplicates().sort_values()
+    all_preds = []
 
     for current_date in test_dates:
+        K.clear_session()
+        reset_seed()
+
         test_df = df[df["Date"] == current_date].copy()
         if test_df.empty:
             continue
 
         test_df[FEATURE_COLUMNS] = test_df[FEATURE_COLUMNS].fillna(method='ffill').fillna(method='bfill').fillna(0)
         if test_df[FEATURE_COLUMNS].isnull().values.any():
-            print(f"⚠️ {current_date.date()} → NaN 있음, 예측 스킵")
+            print(f"⚠️ {current_date.date()} → 여전히 NaN 있음, 예측 스킵")
             continue
 
         test_df["Predicted_Return_GB_1D"] = gb_1d.predict(test_df[FEATURE_COLUMNS]) * 4
         test_df["Predicted_Return_GB_20D"] = gb_20d.predict(test_df[FEATURE_COLUMNS])
 
-        # LSTM 예측
-        lstm_ready_df = pd.DataFrame()
-        if len(df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))]
-               .groupby("Ticker").size().reset_index(name="count").query(f"count >= {SEQUENCE_LENGTH}")) > 0:
-            lstm_ready_tickers = df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))]
-            lstm_ready_tickers = lstm_ready_tickers.groupby("Ticker").filter(lambda x: len(x) >= SEQUENCE_LENGTH)["Ticker"].unique()
-            lstm_ready_df = test_df[test_df["Ticker"].isin(lstm_ready_tickers)].copy()
+        lstm_preds = []
+        valid_rows = []
 
-        if not lstm_ready_df.empty:
-            lstm_preds = []
-            for index, row in lstm_ready_df.iterrows():
-                ticker = row["Ticker"]
-                date = row["Date"]
-                past_window = df[(df["Ticker"] == ticker) & (df["Date"] < date)].sort_values("Date").tail(SEQUENCE_LENGTH)
-                past_feats = past_window[FEATURE_COLUMNS].fillna(0)
-                scaled_feats = scaler.transform(past_feats)
-                input_seq = np.expand_dims(scaled_feats, axis=0)
-                pred = dense_lstm_model.predict(input_seq, verbose=0)[0][0]
-                lstm_preds.append({'index': index, 'Predicted_Return_Dense_LSTM_1D': pred})
+        for _, row in test_df.iterrows():
+            ticker = row["Ticker"]
+            date = row["Date"]
+            past_window = df[(df["Ticker"] == ticker) & (df["Date"] < date)].sort_values("Date").tail(SEQUENCE_LENGTH)
 
-            lstm_preds_df = pd.DataFrame(lstm_preds).set_index('index')
-            test_df = test_df.join(lstm_preds_df)
-            test_df["Predicted_Return_Dense_LSTM_1D"] = test_df["Predicted_Return_Dense_LSTM_1D"].fillna(0)
-        else:
-            test_df["Predicted_Return_Dense_LSTM_1D"] = 0
+            if len(past_window) < SEQUENCE_LENGTH:
+                continue
+
+            past_feats = past_window[FEATURE_COLUMNS].fillna(0)
+            scaled_feats = scaler.transform(past_feats)
+            input_seq = np.expand_dims(scaled_feats, axis=0)
+            pred = dense_lstm_model.predict(input_seq, verbose=0)[0][0]
+            lstm_preds.append(pred)
+            valid_rows.append(row)
+
+        if not valid_rows:
+            continue
+
+        test_df = pd.DataFrame(valid_rows).reset_index(drop=True)
+        test_df["Predicted_Return_Dense_LSTM"] = np.array(lstm_preds) * 100
 
         all_preds.append(test_df)
         print(f"✅ {current_date.date()} 예측 완료 - {len(test_df)}종목")
 
     if not all_preds:
         print("❌ 예측 결과 없음. 시뮬레이션 불가")
-        return pd.DataFrame(columns=[
-            "Date", "Ticker", "Close", "Return_1D",
-            "Predicted_Return_GB_1D", "Predicted_Return_GB_20D", "Predicted_Return_Dense_LSTM_1D"
-        ])
+        return pd.DataFrame()
 
     result_df = pd.concat(all_preds, ignore_index=True)
-
-    # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
-    result_df["예측종가_Dense_LSTM_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM_1D"])
+    result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
 
-    # Return_1D merge
-    if "Return_1D" in df.columns:
-        df_return_1d = df[["Date", "Ticker", "Return_1D"]].copy()
-        result_df = pd.merge(result_df, df_return_1d, on=["Date", "Ticker"], how="left")
-    else:
-        print("⚠️ 원본 df에 'Return_1D' 없음, NaN으로 채움")
-        result_df["Return_1D"] = np.nan
-
-    if "Return_1D" in result_df.columns:
-        result_df["Return_1D"] = result_df["Return_1D"].ffill().bfill()
-    else:
-        result_df["Return_1D"] = np.nan
-        print("⚠️ result_df에 'Return_1D' 없음, 보정 생략")
-
-    result_df = result_df.loc[:, ~result_df.columns.duplicated()]
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
+
 # ------------------------
 SIMULATION_FILE_SIMPLE_FORMATTED = "data/simulation_result_simple.csv"
 
