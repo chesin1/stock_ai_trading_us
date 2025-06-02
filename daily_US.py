@@ -232,9 +232,9 @@ def predict_ai_scores(df):
         if not valid_rows:
             continue
 
-        test_df = pd.DataFrame(valid_rows).reset_index(drop=True)
+        valid_idx = [row.name for row in valid_rows]
+        test_df = test_df.loc[valid_idx].reset_index(drop=True)
         test_df["Predicted_Return_Dense_LSTM"] = np.array(lstm_preds) * 100
-
         all_preds.append(test_df)
         print(f"✅ {current_date.date()} 예측 완료 - {len(test_df)}종목")
 
@@ -243,6 +243,27 @@ def predict_ai_scores(df):
         return pd.DataFrame()
 
     result_df = pd.concat(all_preds, ignore_index=True)
+
+    # ✅ 예측 결과 누락 방지
+    result_df[[
+        "Predicted_Return_GB_1D",
+        "Predicted_Return_GB_20D",
+        "Predicted_Return_Dense_LSTM"
+    ]] = result_df[[
+        "Predicted_Return_GB_1D",
+        "Predicted_Return_GB_20D",
+        "Predicted_Return_Dense_LSTM"
+    ]].fillna(0)
+
+    # ✅ Return_1D 누락 시 직접 계산
+    if "Return_1D" not in result_df.columns:
+        print("⚠️ Return_1D 컬럼이 없어 직접 계산하여 추가합니다.")
+        result_df = result_df.sort_values(["Ticker", "Date"])
+        result_df["Target_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
+        result_df["Return_1D"] = (result_df["Target_1D"] - result_df["Close"]) / result_df["Close"]
+        result_df.drop(columns=["Target_1D"], inplace=True)
+
+    # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
     result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
@@ -271,6 +292,14 @@ def simulate_combined_trading_simple_formatted(df):
     df_sorted["Date"] = pd.to_datetime(df_sorted["Date"]).dt.tz_localize(None)
     df_sorted = df_sorted[df_sorted["Date"] >= pd.to_datetime("2024-05-01")]
 
+    # ✅ Return_1D 없는 경우 직접 계산
+    if "Return_1D" not in df_sorted.columns:
+        print("⚠️ Return_1D 컬럼이 없어 직접 계산하여 추가합니다.")
+        df_sorted = df_sorted.sort_values(["Ticker", "Date"])
+        df_sorted["Target_1D"] = df_sorted.groupby("Ticker")["Close"].shift(-1)
+        df_sorted["Return_1D"] = (df_sorted["Target_1D"] - df_sorted["Close"]) / df_sorted["Close"]
+        df_sorted.drop(columns=["Target_1D"], inplace=True)
+
     if df_sorted.empty:
         print("  - 시뮬레이션할 데이터가 없습니다.")
         return pd.DataFrame()
@@ -283,6 +312,14 @@ def simulate_combined_trading_simple_formatted(df):
             ["Predicted_Return_GB_1D", "Predicted_Return_GB_20D", "Predicted_Return_Dense_LSTM"]
         ):
             portfolio = portfolios[model]
+
+            # ✅ NaN 대비: 점수 열 없으면 0으로 채움
+            if score_col not in date_df.columns:
+                print(f"⚠️ {score_col} 컬럼이 누락되어 0으로 대체합니다.")
+                date_df[score_col] = 0
+            else:
+                date_df[score_col] = date_df[score_col].fillna(0)
+
             current_holdings = list(portfolio["holding"].keys())
 
             for ticker in current_holdings:
@@ -373,6 +410,9 @@ def simulate_combined_trading_simple_formatted(df):
             on=["날짜", "티커"],
             how="left"
         )
+
+        # ✅ 수익률 누락 방지
+        result_df["Return_1D"] = result_df["Return_1D"].fillna(0)
         result_df["실제 수익률"] = result_df["Return_1D"] * 10000
         result_df["예측 방향 일치"] = (result_df["예측 수익률"] * result_df["실제 수익률"]) > 0
         result_df["예측 정확도(%)"] = result_df.apply(
@@ -413,21 +453,6 @@ def simulate_combined_trading_simple_formatted(df):
         }
 
     return result_df, final_assets
-
-def export_final_portfolios(final_assets):
-    os.makedirs("data", exist_ok=True)
-    for model, info in final_assets.items():
-        rows = []
-        for ticker, details in info["보유 종목"].items():
-            rows.append({
-                "Ticker": ticker,
-                "Shares": details["보유 수량"],
-                "Current Price": details["현재가"],
-                "Evaluation Value": details["평가 금액"]
-            })
-        if rows:
-            df_model = pd.DataFrame(rows)
-            df_model.to_csv(f"data/final_portfolio_{model}.csv", index=False)
 
 
 
