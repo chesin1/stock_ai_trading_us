@@ -486,53 +486,63 @@ def plot_prediction_vs_actual(df, model_name, ticker):
 # ------------------------
 if __name__ == "__main__":
     merged_df = update_stock_and_macro_data()
-    if merged_df is not None:
-        merged_df["Date"] = pd.to_datetime(merged_df["Date"])
-        latest_date = merged_df["Date"].max().date()
-        print(f"[✓] Latest date in collected data: {latest_date}")
 
-        predicted_df = predict_ai_scores(merged_df.copy())
+    if merged_df is None:
+        print("[X] Stock and macro data update failed.")
+        exit(1)
 
-        if not predicted_df.empty:
-            # Step 1: Run simulation
-            simulation_results_simple, final_assets = simulate_combined_trading_simple_formatted(predicted_df.copy())
+    merged_df["Date"] = pd.to_datetime(merged_df["Date"])
+    latest_date = merged_df["Date"].max().date()
+    print(f"[✓] Latest date in collected data: {latest_date}")
 
-            if not simulation_results_simple.empty:
-                # Step 2: Return_1D 및 정확도 정보 보강
-                simulation_results_simple.to_csv("data/simulation_result_simple_with_accuracy.csv", index=False)
-                print("[✓] Saved simulation result → simulation_result_simple_with_accuracy.csv")
+    predicted_df = predict_ai_scores(merged_df.copy())
 
-                # Step 3: Save portfolios
-                export_final_portfolios(final_assets)
-                print("[✓] Saved final portfolios by model")
+    if predicted_df.empty:
+        print("[X] No prediction result, simulation aborted.")
+        exit(1)
 
-                # Step 4: Visualization (prediction vs actual)
-                for model in ["GB_1D", "GB_20D", "Dense_LSTM"]:
-                    col_name = f"예측종가_{model}"
-                    if col_name in predicted_df.columns:
-                        for ticker in predicted_df["Ticker"].unique():
-                            plot_prediction_vs_actual(predicted_df.copy(), model, ticker)
+    # Step 1: Run simulation
+    simulation_results_simple, final_assets = simulate_combined_trading_simple_formatted(predicted_df.copy())
 
-                print("[✓] Saved prediction vs actual charts → charts/")
+    if simulation_results_simple.empty:
+        print("[X] Simulation result is empty.")
+        exit(1)
 
-            # Preview
-            print("\n📊 [Prediction Preview - Last 5 Rows]")
-            print(predicted_df.tail(5))
+    # Step 2: Save simulation result
+    sim_result_path = "data/simulation_result_simple_with_accuracy.csv"
+    simulation_results_simple.to_csv(sim_result_path, index=False)
+    print(f"[✓] Saved simulation result → {sim_result_path}")
 
-            print("\n📈 [Simulation Result Preview - First 2 Rows]")
-            print(simulation_results_simple.head(2).to_string(index=False))
+    # Step 3: Save portfolios (Excel)
+    export_final_portfolios(final_assets)
+    print("[✓] Saved final portfolios by model")
 
-            print("\n💼 [Final Portfolio Summary]")
-            for model, info in final_assets.items():
-                print(f"\n📌 Model: {model}")
-                print(f"  - Total Asset: ${info['총 자산']}")
-                print(f"  - Cash Balance: ${info['현금 잔액']}")
-                print(f"  - Number of Holdings: {info['보유 종목 수']}")
-                if info["보유 종목"]:
-                    print("  - Holdings:")
-                    for ticker, details in info["보유 종목"].items():
-                        print(f"     ▸ {ticker}: {details['보유 수량']} shares, Price=${details['현재가']}, Value=${details['평가 금액']}")
-                else:
-                    print("  - No holdings.")
+    # Step 4: Visualization (prediction vs actual)
+    os.makedirs("charts", exist_ok=True)
+    for model in ["GB_1D", "GB_20D", "Dense_LSTM"]:
+        col_name = f"예측종가_{model}"
+        if col_name in predicted_df.columns:
+            for ticker in predicted_df["Ticker"].unique():
+                plot_prediction_vs_actual(predicted_df.copy(), model, ticker)
+    print("[✓] Saved prediction vs actual charts → charts/")
+
+    # Preview logs
+    print("\n📊 [Prediction Preview - Last 5 Rows]")
+    print(predicted_df.tail(5))
+
+    print("\n📈 [Simulation Result Preview - First 2 Rows]")
+    print(simulation_results_simple.head(2).to_string(index=False))
+
+    print("\n💼 [Final Portfolio Summary]")
+    for model, info in final_assets.items():
+        print(f"\n📌 Model: {model}")
+        print(f"  - Total Asset: ${info['총 자산']}")
+        print(f"  - Cash Balance: ${info['현금 잔액']}")
+        print(f"  - Number of Holdings: {info['보유 종목 수']}")
+        if info["보유 종목"]:
+            print("  - Holdings:")
+            for ticker, details in info["보유 종목"].items():
+                print(f"     ▸ {ticker}: {details['보유 수량']} shares, Price=${details['현재가']}, Value=${details['평가 금액']}")
         else:
-            print("[X] No prediction result, simulation aborted.")
+            print("  - No holdings.")
+
