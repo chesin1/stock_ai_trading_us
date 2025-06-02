@@ -143,19 +143,20 @@ def build_dense_lstm(input_shape):
     return model
 
 def add_return_1d_column(df):
+    # Return_1D가 이미 존재하는지 확인
     if "Return_1D" not in df.columns:
-        print("⚠️ 'Return_1D' 컬럼 없음 → 직접 계산합니다.")
+        # Return_1D가 없을 경우에만 계산
         df = df.sort_values(["Ticker", "Date"])
         df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
         df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
         df.drop(columns=["Target_1D"], inplace=True)
-    df["Return_1D"] = df["Return_1D"].fillna(0)
+
+    # Return_1D가 이미 있으면 그 값을 그대로 사용
+    df["Return_1D"] = df["Return_1D"].fillna(0)  # NaN 값을 0으로 처리
     return df
 
 
 def predict_ai_scores(df):
-    print("[2단계] AI 예측 시작")
-
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
 
@@ -200,7 +201,7 @@ def predict_ai_scores(df):
 
     dense_lstm_model = build_dense_lstm((SEQUENCE_LENGTH, X_lstm_train.shape[2]))
     early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    dense_lstm_model.fit(X_lstm_train, y_lstm_train, epochs=30, batch_size=16, validation_split=0.1, callbacks=[early_stop], verbose=1)
+    dense_lstm_model.fit(X_lstm_train, y_lstm_train, epochs=30, batch_size=16, validation_split=0.1, callbacks=[early_stop], verbose=0)
 
     # 예측 시작
     test_dates = df[df["Date"] >= pd.to_datetime("2025-05-01")]["Date"].drop_duplicates().sort_values()
@@ -216,7 +217,6 @@ def predict_ai_scores(df):
 
         test_df[FEATURE_COLUMNS] = test_df[FEATURE_COLUMNS].fillna(method='ffill').fillna(method='bfill').fillna(0)
         if test_df[FEATURE_COLUMNS].isnull().values.any():
-            print(f"⚠️ {current_date.date()} → 여전히 NaN 있음, 예측 스킵")
             continue
 
         test_df["Predicted_Return_GB_1D"] = gb_1d.predict(test_df[FEATURE_COLUMNS]) * 4
@@ -247,13 +247,13 @@ def predict_ai_scores(df):
         test_df = test_df.loc[valid_idx].reset_index(drop=True)
         test_df["Predicted_Return_Dense_LSTM"] = np.array(lstm_preds) * 100
         all_preds.append(test_df)
-        print(f"✅ {current_date.date()} 예측 완료 - {len(test_df)}종목")
 
     if not all_preds:
-        print("❌ 예측 결과 없음. 시뮬레이션 불가")
         return pd.DataFrame()
 
     result_df = pd.concat(all_preds, ignore_index=True)
+
+    # ✅ Return_1D 안전하게 생성
     result_df = add_return_1d_column(result_df)
 
     # 예측 종가 계산
@@ -262,8 +262,8 @@ def predict_ai_scores(df):
     result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
 
     result_df.to_csv(PREDICTED_FILE, index=False)
-    print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
+
 # ------------------------
 SIMULATION_FILE_SIMPLE_FORMATTED = "data/simulation_result_simple.csv"
 
