@@ -142,6 +142,17 @@ def build_dense_lstm(input_shape):
     model.compile(optimizer=optimizer, loss='mse')
     return model
 
+def add_return_1d_column(df):
+    if "Return_1D" not in df.columns:
+        print("⚠️ 'Return_1D' 컬럼 없음 → 직접 계산합니다.")
+        df = df.sort_values(["Ticker", "Date"])
+        df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
+        df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
+        df.drop(columns=["Target_1D"], inplace=True)
+    df["Return_1D"] = df["Return_1D"].fillna(0)
+    return df
+
+
 def predict_ai_scores(df):
     print("[2단계] AI 예측 시작")
 
@@ -243,25 +254,7 @@ def predict_ai_scores(df):
         return pd.DataFrame()
 
     result_df = pd.concat(all_preds, ignore_index=True)
-
-    # ✅ 예측 결과 누락 방지
-    result_df[[
-        "Predicted_Return_GB_1D",
-        "Predicted_Return_GB_20D",
-        "Predicted_Return_Dense_LSTM"
-    ]] = result_df[[
-        "Predicted_Return_GB_1D",
-        "Predicted_Return_GB_20D",
-        "Predicted_Return_Dense_LSTM"
-    ]].fillna(0)
-
-    # ✅ Return_1D 누락 시 직접 계산
-    if "Return_1D" not in result_df.columns:
-        print("⚠️ Return_1D 컬럼이 없어 직접 계산하여 추가합니다.")
-        result_df = result_df.sort_values(["Ticker", "Date"])
-        result_df["Target_1D"] = result_df.groupby("Ticker")["Close"].shift(-1)
-        result_df["Return_1D"] = (result_df["Target_1D"] - result_df["Close"]) / result_df["Close"]
-        result_df.drop(columns=["Target_1D"], inplace=True)
+    result_df = add_return_1d_column(result_df)
 
     # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
@@ -271,7 +264,6 @@ def predict_ai_scores(df):
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
-
 # ------------------------
 SIMULATION_FILE_SIMPLE_FORMATTED = "data/simulation_result_simple.csv"
 
