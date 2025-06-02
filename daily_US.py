@@ -448,6 +448,26 @@ def simulate_combined_trading_simple_formatted(df):
 
     return result_df, final_assets
 
+def export_final_portfolios(final_assets):
+    os.makedirs("data/final_portfolios", exist_ok=True)
+
+    for model, info in final_assets.items():
+        model_data = {
+            "현금 잔액": info["현금 잔액"],
+            "총 자산": info["총 자산"],
+            "보유 종목 수": info["보유 종목 수"]
+        }
+
+        holdings_df = pd.DataFrame.from_dict(info["보유 종목"], orient='index').reset_index()
+        holdings_df.rename(columns={"index": "티커"}, inplace=True)
+
+        file_path = f"data/final_portfolios/{model}_portfolio.xlsx"
+        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
+            pd.DataFrame([model_data]).to_excel(writer, sheet_name="요약", index=False)
+            holdings_df.to_excel(writer, sheet_name="보유 종목", index=False)
+
+    print("[✓] All final portfolios exported to /data/final_portfolios/")
+
 
 
 # 4단계: 시각화 (간단한 시뮬레이션 결과로는 시각화가 제한될 수 있습니다)
