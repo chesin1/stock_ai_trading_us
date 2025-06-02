@@ -117,29 +117,6 @@ def update_stock_and_macro_data():
 # ------------------------
 # 2단계: AI 모델 예측
 # ------------------------
-np.random.seed(42)
-tf.random.set_seed(42)
-
-# 모델 생성 함수 정의
-def build_gb_1d():
-    return GradientBoostingRegressor(n_estimators=200, learning_rate=0.08, max_depth=4, subsample=0.8)
-
-def build_gb_20d():
-    return GradientBoostingRegressor(n_estimators=150, learning_rate=0.04, max_depth=6, subsample=0.9)
-
-def build_dense_lstm(input_shape):
-    K.clear_session()
-    model = Sequential([
-        LSTM(128, activation='tanh', input_shape=input_shape),
-        BatchNormalization(),
-        Dense(64, activation='relu'),
-        Dropout(0.3),
-        Dense(1)
-    ])
-    optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
-    model.compile(optimizer=optimizer, loss='mse')
-    return model
-
 def predict_ai_scores(df):
     print("[2단계] AI 예측 시작")
 
@@ -147,7 +124,7 @@ def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
 
-    # 수익률 및 타겟 생성 (이 부분은 그대로 둡니다. Return_1D가 여기서 생성됩니다.)
+    # 수익률 및 타겟 생성
     df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
     df["Target_20D"] = df.groupby("Ticker")["Close"].shift(-20)
     df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
@@ -155,108 +132,87 @@ def predict_ai_scores(df):
     df["Return"] = df.groupby("Ticker")["Close"].pct_change()
     df = df.ffill().bfill()
 
-    # 훈련 데이터 분리 및 모델 학습 (이 부분은 오류와 직접적인 관련이 적습니다)
+    # 훈련 데이터
     train_df = df[df["Date"] <= pd.to_datetime("2024-12-31")].copy()
     X_train = train_df[FEATURE_COLUMNS].fillna(0)
     y_train_1d = train_df["Return_1D"]
     y_train_20d = train_df["Return_20D"]
 
-    # ... (모델 학습 코드 생략) ...
-
-    # 예측 결과를 저장할 빈 리스트 초기화
+    # 예측 결과 저장 리스트
     all_preds = []
-
-    # 예측을 수행할 날짜 목록
     test_dates = df[df["Date"] >= pd.to_datetime("2025-05-01")]["Date"].drop_duplicates().sort_values()
 
-    # 각 날짜별 예측 수행
     for current_date in test_dates:
         test_df = df[df["Date"] == current_date].copy()
         if test_df.empty:
             continue
 
-        # Feature columns의 결측치 처리
         test_df[FEATURE_COLUMNS] = test_df[FEATURE_COLUMNS].fillna(method='ffill').fillna(method='bfill').fillna(0)
         if test_df[FEATURE_COLUMNS].isnull().values.any():
-            print(f"⚠️ {current_date.date()} → 여전히 NaN 있음, 예측 스킵")
+            print(f"⚠️ {current_date.date()} → NaN 있음, 예측 스킵")
             continue
 
-        # GB 모델 예측
         test_df["Predicted_Return_GB_1D"] = gb_1d.predict(test_df[FEATURE_COLUMNS]) * 4
         test_df["Predicted_Return_GB_20D"] = gb_20d.predict(test_df[FEATURE_COLUMNS])
 
-        # Dense-LSTM 예측
-        # LSTM 예측에 필요한 데이터가 있는 행만 필터링하여 처리
+        # LSTM 예측
         lstm_ready_df = pd.DataFrame()
-        if len(df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))].groupby("Ticker").size().reset_index(name="count").query(f"count >= {SEQUENCE_LENGTH}")) > 0:
-             lstm_ready_tickers = df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))].groupby("Ticker").filter(lambda x: len(x) >= SEQUENCE_LENGTH)["Ticker"].unique()
-             lstm_ready_df = test_df[test_df["Ticker"].isin(lstm_ready_tickers)].copy()
+        if len(df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))]
+               .groupby("Ticker").size().reset_index(name="count").query(f"count >= {SEQUENCE_LENGTH}")) > 0:
+            lstm_ready_tickers = df[(df["Date"] < current_date) & (df["Ticker"].isin(test_df["Ticker"]))]
+            lstm_ready_tickers = lstm_ready_tickers.groupby("Ticker").filter(lambda x: len(x) >= SEQUENCE_LENGTH)["Ticker"].unique()
+            lstm_ready_df = test_df[test_df["Ticker"].isin(lstm_ready_tickers)].copy()
 
         if not lstm_ready_df.empty:
             lstm_preds = []
-            # LSTM 예측에 필요한 과거 데이터를 준비하고 예측 수행
             for index, row in lstm_ready_df.iterrows():
-                 ticker = row["Ticker"]
-                 date = row["Date"]
-                 past_window = df[(df["Ticker"] == ticker) & (df["Date"] < date)].sort_values("Date").tail(SEQUENCE_LENGTH)
-                 past_feats = past_window[FEATURE_COLUMNS].fillna(0)
-                 scaled_feats = scaler.transform(past_feats)
-                 input_seq = np.expand_dims(scaled_feats, axis=0)
-                 pred = dense_lstm_model.predict(input_seq, verbose=0)[0][0]
-                 lstm_preds.append({'index': index, 'Predicted_Return_Dense_LSTM': pred})
+                ticker = row["Ticker"]
+                date = row["Date"]
+                past_window = df[(df["Ticker"] == ticker) & (df["Date"] < date)].sort_values("Date").tail(SEQUENCE_LENGTH)
+                past_feats = past_window[FEATURE_COLUMNS].fillna(0)
+                scaled_feats = scaler.transform(past_feats)
+                input_seq = np.expand_dims(scaled_feats, axis=0)
+                pred = dense_lstm_model.predict(input_seq, verbose=0)[0][0]
+                lstm_preds.append({'index': index, 'Predicted_Return_Dense_LSTM_1D': pred})
 
-            # LSTM 예측 결과를 원래 test_df에 병합
             lstm_preds_df = pd.DataFrame(lstm_preds).set_index('index')
             test_df = test_df.join(lstm_preds_df)
-            test_df["Predicted_Return_Dense_LSTM"] = test_df["Predicted_Return_Dense_LSTM"].fillna(0) # 예측 못 한 경우 0으로 채움
+            test_df["Predicted_Return_Dense_LSTM_1D"] = test_df["Predicted_Return_Dense_LSTM_1D"].fillna(0)
         else:
-            test_df["Predicted_Return_Dense_LSTM"] = 0 # LSTM 준비 데이터 없으면 0으로 채움
+            test_df["Predicted_Return_Dense_LSTM_1D"] = 0
 
-
-        # 예측 결과를 all_preds 리스트에 추가
         all_preds.append(test_df)
         print(f"✅ {current_date.date()} 예측 완료 - {len(test_df)}종목")
 
-
-    # 예측 결과 합치기
     if not all_preds:
         print("❌ 예측 결과 없음. 시뮬레이션 불가")
-        # 빈 DataFrame 반환 시 예상 컬럼 최소한으로 포함
-        return pd.DataFrame(columns=["Date", "Ticker", "Close", "Return_1D",
-                                     "Predicted_Return_GB_1D", "Predicted_Return_GB_20D", "Predicted_Return_Dense_LSTM"])
+        return pd.DataFrame(columns=[
+            "Date", "Ticker", "Close", "Return_1D",
+            "Predicted_Return_GB_1D", "Predicted_Return_GB_20D", "Predicted_Return_Dense_LSTM_1D"
+        ])
 
     result_df = pd.concat(all_preds, ignore_index=True)
 
-    # 예측 종가 계산 (이 부분은 그대로 둡니다)
+    # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
     result_df["예측종가_GB_20D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_20D"])
-    result_df["예측종가_Dense_LSTM"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM"])
+    result_df["예측종가_Dense_LSTM_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_Dense_LSTM_1D"])
 
-    # ✅ Return_1D 컬럼을 df에서 가져와 merge하는 부분.
-    # 오류 방지를 위해 Return_1D 컬럼이 df에 있는지 확인합니다.
+    # Return_1D merge
     if "Return_1D" in df.columns:
-        df_return_1d = df[["Date", "Ticker", "Return_1D"]].copy() # 원본 보존을 위해 copy() 사용
-        # merge 수행
+        df_return_1d = df[["Date", "Ticker", "Return_1D"]].copy()
         result_df = pd.merge(result_df, df_return_1d, on=["Date", "Ticker"], how="left")
     else:
-        print("⚠️ 원본 df에 'Return_1D' 컬럼이 없습니다. merge를 건너뜝니다.")
-        # Return_1D 컬럼이 없으면 NaN으로 채운 컬럼을 추가하여 이후 오류 방지
+        print("⚠️ 원본 df에 'Return_1D' 없음, NaN으로 채움")
         result_df["Return_1D"] = np.nan
 
-
-    # ✅ 결측치 보정 (Return_1D 컬럼이 있는지 확인 후 실행)
-    # merge가 성공했다면 이 시점에 Return_1D 컬럼이 있을 것입니다.
     if "Return_1D" in result_df.columns:
         result_df["Return_1D"] = result_df["Return_1D"].ffill().bfill()
     else:
-         # merge도 실패하고, 원본 df에도 없었던 경우
-         result_df["Return_1D"] = np.nan # 다시 한번 NaN으로 채워줍니다.
-         print("⚠️ result_df에 'Return_1D' 컬럼이 없습니다. 결측치 보정을 수행하지 않습니다.")
+        result_df["Return_1D"] = np.nan
+        print("⚠️ result_df에 'Return_1D' 없음, 보정 생략")
 
-
-    # 최종 DataFrame에서 중복 컬럼 다시 한번 정리
-    result_df = result_df.loc[:,~result_df.columns.duplicated()]
-
+    result_df = result_df.loc[:, ~result_df.columns.duplicated()]
     result_df.to_csv(PREDICTED_FILE, index=False)
     print(f"[2단계] 전체 예측 결과 저장 완료 → {PREDICTED_FILE}")
     return result_df
