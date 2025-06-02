@@ -423,6 +423,8 @@ def simulate_combined_trading_simple_formatted(df):
             axis=1
         )
 
+        result_df.drop(columns=["Return_1D"], inplace=True, errors="ignore")
+
         os.makedirs("data", exist_ok=True)
         result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False, encoding="utf-8-sig")
 
@@ -504,16 +506,23 @@ if __name__ == "__main__":
             simulation_results_simple, final_assets = simulate_combined_trading_simple_formatted(predicted_df.copy())
 
             if not simulation_results_simple.empty:
-                # Step 2: Add Return_1D, Accuracy info
-                simulation_results_simple = simulation_results_simple.merge(
-                    predicted_df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
-                    on=["날짜", "티커"],
-                    how="left"
-                )
-                
-                simulation_results_simple["Return_1D"] = simulation_results_simple["Return_1D"] * 10000
-                simulation_results_simple["Prediction_Match"] = (simulation_results_simple["예측 수익률"] * simulation_results_simple["Return_1D"]) > 0
-                simulation_results_simple["Prediction_Accuracy(%)"] = simulation_results_simple["Prediction_Match"].apply(lambda x: 100 if x else 0)
+                # Step 2: Return_1D 및 정확도 정보 보강
+                if "Return_1D" not in simulation_results_simple.columns:
+                    print("⚠️ simulation_results_simple에 Return_1D 없음 → 예측 데이터에서 병합 시도")
+                    add_returns = predicted_df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"})
+                    simulation_results_simple = simulation_results_simple.merge(add_returns, on=["날짜", "티커"], how="left")
+
+                if "Return_1D" in simulation_results_simple.columns:
+                    simulation_results_simple["Return_1D"] = simulation_results_simple["Return_1D"].fillna(0)
+                    simulation_results_simple["실제 수익률"] = simulation_results_simple["Return_1D"] * 10000
+                    simulation_results_simple["Prediction_Match"] = (
+                        simulation_results_simple["예측 수익률"] * simulation_results_simple["실제 수익률"]
+                    ) > 0
+                    simulation_results_simple["Prediction_Accuracy(%)"] = simulation_results_simple["Prediction_Match"].apply(
+                        lambda x: 100 if x else 0
+                    )
+                else:
+                    print("❌ Return_1D 병합 실패. 정확도 계산 생략됨.")
 
                 simulation_results_simple.to_csv("data/simulation_result_simple_with_accuracy.csv", index=False)
                 print("[✓] Saved simulation result with accuracy info → simulation_result_simple_with_accuracy.csv")
