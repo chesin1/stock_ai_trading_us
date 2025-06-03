@@ -1,5 +1,5 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,AAPL,AAPL,28,203.24,5690.72
-Dense-LSTM,ADBE,ADBE,10,410.53,4105.3
-Dense-LSTM,현금,,,,463.58
-Dense-LSTM,총 자산,,,,10259.6
+Dense-LSTM,SMCI,SMCI,182,42.81,7792.33
+Dense-LSTM,AMD,AMD,40,116.69,4667.6
+Dense-LSTM,현금,,,,101.15
+Dense-LSTM,총 자산,,,,12561.08
