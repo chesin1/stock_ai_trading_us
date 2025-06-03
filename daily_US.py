@@ -239,7 +239,7 @@ def predict_ai_scores(df):
                 continue
 
             past_feats = past_window[FEATURE_COLUMNS].fillna(0)
-            scaled_feats = scaler.transform(past_feats)
+            scaled_feats = scaler.transform(past_feats.values)
             input_seq = np.expand_dims(scaled_feats, axis=0)
             pred = dense_lstm_model.predict(input_seq, verbose=0)[0][0]
             lstm_preds.append(pred)
@@ -552,7 +552,7 @@ if __name__ == "__main__":
     print(f"[✓] Saved simulation result → {sim_result_path}")
 
     # Step 3: Save portfolios (CSV)
-    export_final_portfolios(final_assets)
+    
     print("[✓] Saved final portfolios by model")
 
     # Step 4: Visualization (prediction vs actual)
@@ -562,7 +562,7 @@ if __name__ == "__main__":
     model_name_map = {
         "GB_1D": "gb_1d",
         "GB_20D": "gb_20d",
-        "Dense_LSTM": "dense_lstm"
+        "Dense-LSTM": "dense_lstm"
     }
 
     for model_orig, model_safe in model_name_map.items():
