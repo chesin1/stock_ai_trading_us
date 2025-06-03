@@ -262,36 +262,29 @@ def predict_ai_scores(df):
     return result_df
 
 # ------------------------
-SIMULATION_FILE_SIMPLE_FORMATTED = "data/simulation_result_simple.csv"
-
-def simulate_combined_trading_simple_formatted(df):
+def simulate_combined_trading_us_formatted(df):
     print("[3단계] 통합 모의투자 시작 (누적 보유 + 조건부 부분매도)")
 
-    initial_capital = 10000
+    initial_capital = 10000  # 만 달러
     portfolios = {
         "GB_1D": {"capital": initial_capital, "holding": {}},
         "GB_20D": {"capital": initial_capital, "holding": {}},
         "Dense-LSTM": {"capital": initial_capital, "holding": {}},
     }
     history = []
-    TRADE_AMOUNT = 2000
+    TRADE_AMOUNT = 2000  # $2,000
 
     df_sorted = df.sort_values(by=["Date", "Ticker"]).copy()
     df_sorted = df_sorted.fillna(method='ffill').fillna(method='bfill')
     df_sorted["Date"] = pd.to_datetime(df_sorted["Date"]).dt.tz_localize(None)
-    df_sorted = df_sorted[df_sorted["Date"] >= pd.to_datetime("2024-05-01")]
-
-    # ✅ Return_1D 없는 경우 직접 계산
-    if "Return_1D" not in df_sorted.columns:
-        print("⚠️ Return_1D 컬럼이 없어 직접 계산하여 추가합니다.")
-        df_sorted = df_sorted.sort_values(["Ticker", "Date"])
-        df_sorted["Target_1D"] = df_sorted.groupby("Ticker")["Close"].shift(-1)
-        df_sorted["Return_1D"] = (df_sorted["Target_1D"] - df_sorted["Close"]) / df_sorted["Close"]
-        df_sorted.drop(columns=["Target_1D"], inplace=True)
+    df_sorted = df_sorted[
+        (df_sorted["Date"] >= pd.to_datetime("2025-05-01")) &
+        (df_sorted["Date"] <= pd.to_datetime(datetime.now().strftime("%Y-%m-%d")))
+    ]
 
     if df_sorted.empty:
         print("  - 시뮬레이션할 데이터가 없습니다.")
-        return pd.DataFrame()
+        return pd.DataFrame(), {}
 
     print(f"  - {df_sorted['Date'].min().date()} 부터 시뮬레이션 실행 중...")
 
@@ -301,16 +294,9 @@ def simulate_combined_trading_simple_formatted(df):
             ["Predicted_Return_GB_1D", "Predicted_Return_GB_20D", "Predicted_Return_Dense_LSTM"]
         ):
             portfolio = portfolios[model]
-
-            # ✅ NaN 대비: 점수 열 없으면 0으로 채움
-            if score_col not in date_df.columns:
-                print(f"⚠️ {score_col} 컬럼이 누락되어 0으로 대체합니다.")
-                date_df[score_col] = 0
-            else:
-                date_df[score_col] = date_df[score_col].fillna(0)
-
             current_holdings = list(portfolio["holding"].keys())
 
+            # 1. 매도 판단
             for ticker in current_holdings:
                 holding_info = portfolio["holding"][ticker]
                 holding_stock_data = date_df[date_df["Ticker"] == ticker]
@@ -335,6 +321,8 @@ def simulate_combined_trading_simple_formatted(df):
                             portfolio["holding"][ticker]["shares"] -= shares_to_sell
 
                             buy_price = holding_info["buy_price"]
+                            profit = (sell_price * 0.999 - buy_price) * shares_to_sell
+
                             total_asset_after_sell = portfolio["capital"] + sum(
                                 h["shares"] * current_price for h in portfolio["holding"].values()
                             )
@@ -342,7 +330,7 @@ def simulate_combined_trading_simple_formatted(df):
                             history.append({
                                 "날짜": date,
                                 "모델": model,
-                                "티커": ticker,
+                                "종목명": ticker,
                                 "예측 수익률": holding_score * 10000,
                                 "현재가": sell_price,
                                 "매수(매도)": f"SELL ({shares_to_sell}주)",
@@ -353,6 +341,7 @@ def simulate_combined_trading_simple_formatted(df):
                             if portfolio["holding"][ticker]["shares"] <= 0:
                                 del portfolio["holding"][ticker]
 
+            # 2. 매수 판단 (예측 수익률 > 1%인 상위 2개 종목)
             top_candidates = date_df[date_df[score_col] > 0.01].sort_values(by=score_col, ascending=False).head(2)
 
             for _, row in top_candidates.iterrows():
@@ -383,6 +372,7 @@ def simulate_combined_trading_simple_formatted(df):
                         history.append({
                             "날짜": date,
                             "모델": model,
+                            "종목명": ticker,
                             "티커": ticker,
                             "예측 수익률": score * 10000,
                             "현재가": buy_price,
@@ -393,15 +383,13 @@ def simulate_combined_trading_simple_formatted(df):
 
     result_df = pd.DataFrame(history)
     if not result_df.empty:
-        result_df = result_df[["날짜", "모델", "티커", "예측 수익률", "현재가", "매수(매도)", "잔여 현금", "총 자산"]]
+        result_df = result_df[["날짜", "모델", "종목명", "티커", "예측 수익률", "현재가", "매수(매도)", "잔여 현금", "총 자산"]]
+
         result_df = result_df.merge(
-            df_sorted[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
+            df[["Date", "Ticker", "Return_1D"]].rename(columns={"Date": "날짜", "Ticker": "티커"}),
             on=["날짜", "티커"],
             how="left"
         )
-
-        # ✅ 수익률 누락 방지
-        result_df["Return_1D"] = result_df["Return_1D"].fillna(0)
         result_df["실제 수익률"] = result_df["Return_1D"] * 10000
         result_df["예측 방향 일치"] = (result_df["예측 수익률"] * result_df["실제 수익률"]) > 0
         result_df["예측 정확도(%)"] = result_df.apply(
@@ -412,13 +400,13 @@ def simulate_combined_trading_simple_formatted(df):
             axis=1
         )
 
-        result_df.drop(columns=["Return_1D"], inplace=True, errors="ignore")
+        result_df.to_csv("data/us_simulation_result_with_accuracy.csv", index=False, encoding="utf-8-sig")
+        print("✅ 시뮬레이션 결과 + 정확도 저장 완료 → data/us_simulation_result_with_accuracy.csv")
+    else:
+        print("[3단계] 시뮬레이션 결과 없음")
 
-        os.makedirs("data", exist_ok=True)
-        result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False, encoding="utf-8-sig")
-
+    # 포트폴리오 요약 생성
     final_assets = {}
-    
     for model, port in portfolios.items():
         holding_summary = {}
         total_holding_value = 0
@@ -444,59 +432,27 @@ def simulate_combined_trading_simple_formatted(df):
             "보유 종목": holding_summary
         }
 
+        if holding_summary:
+            df_model = pd.DataFrame([
+                {
+                    "모델": model,
+                    "종목명": ticker,
+                    "티커": ticker,
+                    "보유 수량": info["보유 수량"],
+                    "현재가": info["현재가"],
+                    "평가 금액": info["평가 금액"]
+                }
+                for ticker, info in holding_summary.items()
+            ] + [
+                {"모델": model, "종목명": "현금", "티커": "", "보유 수량": "", "현재가": "", "평가 금액": round(port["capital"], 2)},
+                {"모델": model, "종목명": "총 자산", "티커": "", "보유 수량": "", "현재가": "", "평가 금액": round(total_asset, 2)}
+            ])
+        
+            filename = f"data/{model.lower().replace('-', '_')}_portfolio_final.csv"
+            df_model.to_csv(filename, index=False, encoding="utf-8-sig")
+            print(f"📁 {model} 최종 포트폴리오 저장 완료 → {filename}")
+
     return result_df, final_assets
-
-
-def export_final_portfolios(final_assets):
-    os.makedirs("data/final_portfolios", exist_ok=True)
-
-    for model, info in final_assets.items():
-        # 보유 종목이 없으면 경고 메시지 출력
-        if not info["보유 종목"]:
-            print(f"[⚠️] {model} 모델에 보유 종목이 없어서 포트폴리오에 보유 종목이 없습니다.")
-
-        rows = []
-
-        # 보유 종목
-        for ticker, details in info["보유 종목"].items():
-            rows.append({
-                "모델": model,
-                "종목명": "",  # 필요하면 채우기
-                "티커": ticker,
-                "보유 수량": details["보유 수량"],
-                "현재가": details["현재가"],
-                "평가 금액": details["평가 금액"]
-            })
-
-        # 현금 행 추가
-        rows.append({
-            "모델": model,
-            "종목명": "현금",
-            "티커": "",
-            "보유 수량": "",
-            "현재가": "",
-            "평가 금액": info["현금 잔액"]
-        })
-
-        # 총 자산 행 추가
-        rows.append({
-            "모델": model,
-            "종목명": "총 자산",
-            "티커": "",
-            "보유 수량": "",
-            "현재가": "",
-            "평가 금액": info["총 자산"]
-        })
-
-        df = pd.DataFrame(rows)
-
-        file_safe_model = model.lower().replace("-", "_")
-        file_path = f"data/final_portfolios/{file_safe_model}_portfolio_final.csv"
-        df.to_csv(file_path, index=False, encoding="utf-8-sig")
-
-        print(f"[✓] {model} 포트폴리오 저장 완료 → {file_path}")
-
-    print("\n[✓] 모든 모델의 최종 포트폴리오가 CSV로 저장되었습니다.")
 
 
 
