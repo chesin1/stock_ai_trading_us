@@ -488,17 +488,17 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     # MAE 계산
     mae = np.mean(np.abs(df["Predicted_Close"] - df["Actual_Close"]))
 
-    # 마지막 날짜 예측 정보
-    last_row = df.iloc[-1]
-    actual_close = last_row["Actual_Close"]
+    # 예측값이 존재하는 가장 최근 행 찾기
+    valid_pred_df = df[df["Predicted_Close"].notna()]
+    if valid_pred_df.empty:
+        pred_val = np.nan
+        actual_close = np.nan
+    else:
+        last_row = valid_pred_df.iloc[-1]
+        pred_val = last_row["Predicted_Close"]
+        actual_close = last_row["Actual_Close"]
 
-    model_pred_map = {
-        "GB_1D": last_row.get("예측종가_GB_1D", np.nan),
-        "GB_20D": last_row.get("예측종가_GB_20D", np.nan),
-        "Dense_LSTM": last_row.get("예측종가_Dense_LSTM", np.nan)
-    }
-    pred_val = model_pred_map.get(model_orig, np.nan)
-
+    # 라벨 매핑
     model_label_map = {
         "GB_1D": "1-day Forecast",
         "GB_20D": "20-day Forecast",
@@ -506,6 +506,7 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     }
     label = model_label_map.get(model_orig, "Forecast")
 
+    # 텍스트
     if not np.isnan(pred_val):
         info_text = (
             f"Current Price: ${actual_close:.2f}\n"
@@ -514,7 +515,7 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
         )
     else:
         info_text = (
-            f"Current Price: ${actual_close:.2f}\n"
+            f"Current Price: N/A\n"
             f"MAE (Accuracy): {mae:.2f}\n"
             f"{label}: N/A"
         )
@@ -533,7 +534,7 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    # 텍스트 삽입 (폰트 작게, 왼쪽 상단)
+    # 텍스트 삽입
     fig.text(
         0.02, 0.98,
         info_text,
