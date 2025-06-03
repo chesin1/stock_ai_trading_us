@@ -142,17 +142,6 @@ def build_dense_lstm(input_shape):
     model.compile(optimizer=optimizer, loss='mse')
     return model
 
-def add_return_1d_column(df):
-    if "Return_1D" not in df.columns:
-        # Return_1D 계산
-        df = df.sort_values(["Ticker", "Date"])
-        df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
-        df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
-        df.drop(columns=["Target_1D"], inplace=True)
-
-    df["Return_1D"] = df["Return_1D"].fillna(0)  # NaN 값 0으로 처리
-    return df
-
 def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
@@ -205,9 +194,7 @@ def predict_ai_scores(df):
     all_preds = []
 
     for current_date in test_dates:
-        K.clear_session()
-        reset_seed()
-
+        # 예측 중에는 모델 초기화 및 시드 고정 X (중복 방지)
         test_df = df[df["Date"] == current_date].copy()
         if test_df.empty:
             continue
