@@ -129,6 +129,11 @@ def build_gb_20d():
     return GradientBoostingRegressor(n_estimators=150, learning_rate=0.04, max_depth=6, subsample=0.9)
 
 def build_dense_lstm(input_shape):
+    def custom_loss(y_true, y_pred):
+        mse = tf.keras.losses.mean_squared_error(y_true, y_pred)
+        std_penalty = 1e-2 / (tf.math.reduce_std(y_pred) + 1e-6)
+        return mse + std_penalty
+
     K.clear_session()
     reset_seed()
     model = Sequential([
@@ -136,13 +141,10 @@ def build_dense_lstm(input_shape):
         BatchNormalization(),
         Dense(32, activation='relu'),
         Dropout(0.5),
-        Dense(1, activation='tanh')  # 출력값 제한
+        Dense(1)  # tanh 제거: 자유롭게 예측하도록
     ])
     optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
-    model.compile(optimizer=optimizer, loss='mse')
-    return model
-    optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
-    model.compile(optimizer=optimizer, loss='mse')
+    model.compile(optimizer=optimizer, loss=custom_loss)
     return model
 
 def add_return_columns(df):
