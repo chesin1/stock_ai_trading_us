@@ -143,18 +143,15 @@ def build_dense_lstm(input_shape):
     return model
 
 def add_return_1d_column(df):
-    # Return_1D가 이미 존재하는지 확인
     if "Return_1D" not in df.columns:
-        # Return_1D가 없을 경우에만 계산
+        # Return_1D 계산
         df = df.sort_values(["Ticker", "Date"])
         df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
         df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
         df.drop(columns=["Target_1D"], inplace=True)
 
-    # Return_1D가 이미 있으면 그 값을 그대로 사용
-    df["Return_1D"] = df["Return_1D"].fillna(0)  # NaN 값을 0으로 처리
+    df["Return_1D"] = df["Return_1D"].fillna(0)  # NaN 값 0으로 처리
     return df
-
 
 def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
@@ -455,6 +452,10 @@ def export_final_portfolios(final_assets):
     os.makedirs("data/final_portfolios", exist_ok=True)
 
     for model, info in final_assets.items():
+        # 보유 종목이 없으면 경고 메시지 출력, 여전히 포트폴리오 파일은 생성
+        if not info["보유 종목"]:
+            print(f"[⚠️] {model} 모델에 보유 종목이 없어서 포트폴리오에 보유 종목이 없습니다.")
+        
         rows = []
 
         # 보유 종목
