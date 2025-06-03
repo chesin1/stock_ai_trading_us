@@ -511,7 +511,7 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     df = df[df["Ticker"] == ticker]
     df = df[df["Date"] >= pd.to_datetime("2025-04-01")].sort_values("Date")
 
-    pred_col = f"예측종가_{model_name}"
+    pred_col = f"예측종가_{model_orig}"
     if df.empty or pred_col not in df.columns:
         return
 
@@ -529,9 +529,9 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
 
     plt.figure(figsize=(12, 6))
     plt.plot(df["Date"], df["Actual_Close"], label="Actual Close", linewidth=2)
-    plt.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_name})", linestyle="--", linewidth=2)
+    plt.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_orig})", linestyle="--", linewidth=2)
 
-    plt.title(f"{ticker} - {model_name} Prediction vs Actual", fontsize=14)
+    plt.title(f"{ticker} - {model_orig} Prediction vs Actual", fontsize=14)
     plt.xlabel("Date", fontsize=12)
     plt.ylabel("Price", fontsize=12)
     plt.legend()
@@ -550,7 +550,7 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     )
 
     os.makedirs("charts", exist_ok=True)
-    plt.savefig(f"charts/predicted_vs_actual_{model_name}_{safe_ticker}.png")
+    plt.savefig(f"charts/predicted_vs_actual_{model_safe}_{safe_ticker}.png")
     plt.close()
 
 # ------------------------
