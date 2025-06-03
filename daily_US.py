@@ -132,36 +132,18 @@ def build_dense_lstm(input_shape):
     K.clear_session()
     reset_seed()
     model = Sequential([
-        LSTM(128, activation='tanh', input_shape=input_shape),
+        LSTM(64, activation='tanh', input_shape=input_shape),
         BatchNormalization(),
-        Dense(64, activation='relu'),
-        Dropout(0.3),
-        Dense(1)
+        Dense(32, activation='relu'),
+        Dropout(0.5),
+        Dense(1, activation='tanh')  # 출력값 제한
     ])
     optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
     model.compile(optimizer=optimizer, loss='mse')
     return model
-
-def add_return_columns(df):
-    df = df.sort_values(["Ticker", "Date"]).copy()
-
-    if "Return_1D" not in df.columns:
-        df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
-        df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
-        df.drop(columns=["Target_1D"], inplace=True)
-
-    if "Return_20D" not in df.columns:
-        df["Target_20D"] = df.groupby("Ticker")["Close"].shift(-20)
-        df["Return_20D"] = (df["Target_20D"] - df["Close"]) / df["Close"]
-        df.drop(columns=["Target_20D"], inplace=True)
-
-    if "Return" not in df.columns:
-        df["Return"] = df.groupby("Ticker")["Close"].pct_change()
-
-    df[["Return_1D", "Return_20D", "Return"]] = df[["Return_1D", "Return_20D", "Return"]].fillna(0)
-
-    return df
-
+    optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
+    model.compile(optimizer=optimizer, loss='mse')
+    return model
 
 def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
@@ -191,13 +173,15 @@ def predict_ai_scores(df):
     # Dense-LSTM 훈련
     SEQUENCE_LENGTH = 10
     scaler = MinMaxScaler()
+    scaler.fit(X_train)  # ✅ 전체 데이터 기준으로 fit
+
     X_lstm_train, y_lstm_train = [], []
 
     for ticker in train_df["Ticker"].unique():
         temp_df = train_df[train_df["Ticker"] == ticker].copy()
         X_temp = temp_df[FEATURE_COLUMNS].fillna(0).values
         y_temp = temp_df["Return_1D"].values
-        X_scaled = scaler.fit_transform(X_temp)
+        X_scaled = scaler.transform(X_temp)  # ✅ fit_transform → transform
 
         for i in range(SEQUENCE_LENGTH, len(X_scaled)):
             X_lstm_train.append(X_scaled[i - SEQUENCE_LENGTH:i])
@@ -208,14 +192,18 @@ def predict_ai_scores(df):
 
     dense_lstm_model = build_dense_lstm((SEQUENCE_LENGTH, X_lstm_train.shape[2]))
     early_stop = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
-    dense_lstm_model.fit(X_lstm_train, y_lstm_train, epochs=30, batch_size=16, validation_split=0.1, callbacks=[early_stop], verbose=0)
+    dense_lstm_model.fit(
+        X_lstm_train, y_lstm_train,
+        epochs=30, batch_size=16,
+        validation_split=0.1, callbacks=[early_stop],
+        verbose=0
+    )
 
     # 예측 시작
     test_dates = df[df["Date"] >= pd.to_datetime("2025-05-01")]["Date"].drop_duplicates().sort_values()
     all_preds = []
 
     for current_date in test_dates:
-        # 예측 중에는 모델 초기화 및 시드 고정 X (중복 방지)
         test_df = df[df["Date"] == current_date].copy()
         if test_df.empty:
             continue
@@ -250,7 +238,7 @@ def predict_ai_scores(df):
 
         valid_idx = [row.name for row in valid_rows]
         test_df = test_df.loc[valid_idx].reset_index(drop=True)
-        test_df["Predicted_Return_Dense_LSTM"] = np.array(lstm_preds) * 100
+        test_df["Predicted_Return_Dense_LSTM"] = np.array(lstm_preds) * 10  # ✅ 기존 100 → 10
         all_preds.append(test_df)
 
     if not all_preds:
@@ -268,6 +256,7 @@ def predict_ai_scores(df):
 
     result_df.to_csv(PREDICTED_FILE, index=False)
     return result_df
+
 
 # ------------------------
 def simulate_combined_trading_us_formatted(df):
@@ -468,11 +457,8 @@ def simulate_combined_trading_us_formatted(df):
 # 4단계: 시각화 (간단한 시뮬레이션 결과로는 시각화가 제한될 수 있습니다)
 # ------------------------
 def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
-    """
-    Plot actual vs predicted close prices from April 2025 to today, with MAE.
-    """
     df = df.copy()
-    df["Date"] = pd.to_datetime(df["Date"])  # ✅ 강제 변환
+    df["Date"] = pd.to_datetime(df["Date"])
     df = df[df["Ticker"] == ticker]
     df = df[df["Date"] >= pd.to_datetime("2025-04-01")].sort_values("Date")
 
@@ -480,18 +466,26 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     if df.empty or pred_col not in df.columns:
         return
 
-    # Rename for display
-    df = df.rename(columns={
-        "Close": "Actual_Close",
-        pred_col: "Predicted_Close"
-    })
+    df = df.rename(columns={"Close": "Actual_Close", pred_col: "Predicted_Close"})
 
     # MAE 계산
     mae = np.mean(np.abs(df["Predicted_Close"] - df["Actual_Close"]))
     mae_text = f"MAE: {mae:.2f}"
 
-    safe_ticker = ticker.replace("-", "_")
+    # ✅ 예측 종가 정보
+    last_row = df.iloc[-1]
+    pred_1d = last_row.get("예측종가_GB_1D", np.nan)
+    pred_20d = last_row.get("예측종가_GB_20D", np.nan)
+    pred_lstm = last_row.get("예측종가_Dense_LSTM", np.nan)
 
+    pred_1d_txt = f"1D: ${pred_1d:.2f}" if not np.isnan(pred_1d) else "1D: N/A"
+    pred_20d_txt = f"20D: ${pred_20d:.2f}" if not np.isnan(pred_20d) else "20D: N/A"
+    pred_lstm_txt = f"LSTM: ${pred_lstm:.2f}" if not np.isnan(pred_lstm) else "LSTM: N/A"
+
+    pred_text = f"{pred_1d_txt}\n{pred_20d_txt}\n{pred_lstm_txt}"
+
+    # 시각화
+    safe_ticker = ticker.replace("-", "_")
     plt.figure(figsize=(12, 6))
     plt.plot(df["Date"], df["Actual_Close"], label="Actual Close", linewidth=2)
     plt.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_orig})", linestyle="--", linewidth=2)
@@ -504,9 +498,10 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    # MAE 삽입
+    # 정보 박스 삽입
     plt.gca().text(
-        0.95, 0.95, mae_text,
+        0.95, 0.95,
+        f"{mae_text}\n{pred_text}",
         transform=plt.gca().transAxes,
         fontsize=12,
         verticalalignment='top',
