@@ -145,6 +145,15 @@ def build_dense_lstm(input_shape):
     model.compile(optimizer=optimizer, loss='mse')
     return model
 
+def add_return_columns(df):
+    df = df.sort_values(["Ticker", "Date"]).copy()
+
+    if "Return_1D" not in df.columns:
+        df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
+        df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
+
+    return df
+
 def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
