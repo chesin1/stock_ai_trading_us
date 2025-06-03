@@ -356,36 +356,44 @@ def simulate_combined_trading_us_formatted(df):
 
                 if portfolio["capital"] >= TRADE_AMOUNT:
                     buy_price = row["Close"]
+
+                    # ✅ 비정상 가격 차단
+                    if pd.isna(buy_price) or buy_price <= 1 or buy_price >= 5000:
+                        continue
+
                     buy_value_to_spend = min(TRADE_AMOUNT, portfolio["capital"] * 0.99)
                     shares = int(buy_value_to_spend // (buy_price * 1.001))
 
-                    if shares > 0:
-                        cost = shares * buy_price * 1.001
-                        portfolio["capital"] -= cost
+                    # ✅ 비정상 수량 차단
+                    if shares <= 0 or shares > 10000:
+                        continue
 
-                        if ticker in portfolio["holding"]:
-                            portfolio["holding"][ticker]["shares"] += shares
-                        else:
-                            portfolio["holding"][ticker] = {
-                                "shares": shares,
-                                "buy_price": buy_price
-                            }
+                    cost = shares * buy_price * 1.001
+                    portfolio["capital"] -= cost
 
-                        total_asset_after_buy = portfolio["capital"] + sum(
-                            h["shares"] * buy_price for h in portfolio["holding"].values()
-                        )
+                    if ticker in portfolio["holding"]:
+                        portfolio["holding"][ticker]["shares"] += shares
+                    else:
+                        portfolio["holding"][ticker] = {
+                            "shares": shares,
+                            "buy_price": buy_price
+                        }
 
-                        history.append({
-                            "날짜": date,
-                            "모델": model,
-                            "종목명": ticker,
-                            "티커": ticker,
-                            "예측 수익률": score * 10000,
-                            "현재가": buy_price,
-                            "매수(매도)": f"BUY ({shares}주)",
-                            "잔여 현금": portfolio["capital"],
-                            "총 자산": total_asset_after_buy
-                        })
+                    total_asset_after_buy = portfolio["capital"] + sum(
+                        h["shares"] * buy_price for h in portfolio["holding"].values()
+                    )
+
+                    history.append({
+                        "날짜": date,
+                        "모델": model,
+                        "종목명": ticker,
+                        "티커": ticker,
+                        "예측 수익률": score * 10000,
+                        "현재가": buy_price,
+                        "매수(매도)": f"BUY ({shares}주)",
+                        "잔여 현금": portfolio["capital"],
+                        "총 자산": total_asset_after_buy
+                    })
 
     result_df = pd.DataFrame(history)
     if not result_df.empty:
@@ -479,47 +487,69 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
 
     # MAE 계산
     mae = np.mean(np.abs(df["Predicted_Close"] - df["Actual_Close"]))
-    mae_text = f"MAE: {mae:.2f}"
 
-    # ✅ 예측 종가 정보
+    # 예측 종가 정보
     last_row = df.iloc[-1]
+    actual_close = last_row["Actual_Close"]
     pred_1d = last_row.get("예측종가_GB_1D", np.nan)
     pred_20d = last_row.get("예측종가_GB_20D", np.nan)
     pred_lstm = last_row.get("예측종가_Dense_LSTM", np.nan)
 
-    pred_1d_txt = f"1D: ${pred_1d:.2f}" if not np.isnan(pred_1d) else "1D: N/A"
-    pred_20d_txt = f"20D: ${pred_20d:.2f}" if not np.isnan(pred_20d) else "20D: N/A"
-    pred_lstm_txt = f"LSTM: ${pred_lstm:.2f}" if not np.isnan(pred_lstm) else "LSTM: N/A"
-
-    pred_text = f"{pred_1d_txt}\n{pred_20d_txt}\n{pred_lstm_txt}"
+    if model_orig == "GB_1D":
+        info_text = (
+            f"현재 종가: ${actual_close:.2f}\n"
+            f"정확도 (MAE): {mae:.2f}\n"
+            f"1D 예측: ${pred_1d:.2f}" if not np.isnan(pred_1d) else "1D 예측: N/A"
+        )
+    elif model_orig == "GB_20D":
+        info_text = (
+            f"현재 종가: ${actual_close:.2f}\n"
+            f"정확도 (MAE): {mae:.2f}\n"
+            f"20D 예측: ${pred_20d:.2f}" if not np.isnan(pred_20d) else "20D 예측: N/A"
+        )
+    elif model_orig == "Dense_LSTM":
+        info_text = (
+            f"현재 종가: ${actual_close:.2f}\n"
+            f"정확도 (MAE): {mae:.2f}\n"
+            f"LSTM 예측: ${pred_lstm:.2f}" if not np.isnan(pred_lstm) else "LSTM 예측: N/A"
+        )
+    else:
+        info_text = f"현재 종가: ${actual_close:.2f}\n정확도 (MAE): {mae:.2f}"
 
     # 시각화
     safe_ticker = ticker.replace("-", "_")
-    plt.figure(figsize=(12, 6))
-    plt.plot(df["Date"], df["Actual_Close"], label="Actual Close", linewidth=2)
-    plt.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_orig})", linestyle="--", linewidth=2)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(df["Date"], df["Actual_Close"], label="Actual Close", linewidth=2)
+    ax.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_orig})", linestyle="--", linewidth=2)
 
-    plt.title(f"{ticker} - {model_orig} Prediction vs Actual", fontsize=14)
-    plt.xlabel("Date", fontsize=12)
-    plt.ylabel("Price", fontsize=12)
-    plt.legend()
-    plt.grid(True)
+    ax.set_title(f"{ticker} - {model_orig} Prediction vs Actual", fontsize=14)
+    ax.set_xlabel("Date", fontsize=12)
+    ax.set_ylabel("Price", fontsize=12)
+    ax.legend()
+    ax.grid(True)
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    # 정보 박스 삽입
-    plt.gca().text(
-        0.95, 0.95,
-        f"{mae_text}\n{pred_text}",
-        transform=plt.gca().transAxes,
+    # 안전하게 겹치지 않는 위치 계산
+    def safe_text_position(fig, ax, padding=0.05):
+        fig_width, fig_height = fig.get_size_inches()
+        bbox = ax.get_position()
+        x = bbox.x1 + padding / fig_width
+        y = bbox.y1
+        return x, y
+
+    x, y = safe_text_position(fig, ax)
+    fig.text(
+        x, y,
+        info_text,
         fontsize=12,
         verticalalignment='top',
-        horizontalalignment='right',
+        horizontalalignment='left',
         bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3')
     )
 
     os.makedirs("charts", exist_ok=True)
-    plt.savefig(f"charts/predicted_vs_actual_{model_safe}_{safe_ticker}.png")
+    plt.savefig(f"charts/{model_safe}_{safe_ticker}.png", bbox_inches="tight")
     plt.close()
 
 # ------------------------
