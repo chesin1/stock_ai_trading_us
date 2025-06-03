@@ -502,7 +502,7 @@ def export_final_portfolios(final_assets):
 
 # 4단계: 시각화 (간단한 시뮬레이션 결과로는 시각화가 제한될 수 있습니다)
 # ------------------------
-def plot_prediction_vs_actual(df, model_name, ticker):
+def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     """
     Plot actual vs predicted close prices from April 2025 to today, with MAE.
     """
