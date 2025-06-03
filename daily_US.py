@@ -142,6 +142,27 @@ def build_dense_lstm(input_shape):
     model.compile(optimizer=optimizer, loss='mse')
     return model
 
+def add_return_columns(df):
+    df = df.sort_values(["Ticker", "Date"]).copy()
+
+    if "Return_1D" not in df.columns:
+        df["Target_1D"] = df.groupby("Ticker")["Close"].shift(-1)
+        df["Return_1D"] = (df["Target_1D"] - df["Close"]) / df["Close"]
+        df.drop(columns=["Target_1D"], inplace=True)
+
+    if "Return_20D" not in df.columns:
+        df["Target_20D"] = df.groupby("Ticker")["Close"].shift(-20)
+        df["Return_20D"] = (df["Target_20D"] - df["Close"]) / df["Close"]
+        df.drop(columns=["Target_20D"], inplace=True)
+
+    if "Return" not in df.columns:
+        df["Return"] = df.groupby("Ticker")["Close"].pct_change()
+
+    df[["Return_1D", "Return_20D", "Return"]] = df[["Return_1D", "Return_20D", "Return"]].fillna(0)
+
+    return df
+
+
 def predict_ai_scores(df):
     df["Date"] = pd.to_datetime(df["Date"]).dt.tz_localize(None)
     df = df.loc[:, ~df.columns.duplicated()]
@@ -238,7 +259,7 @@ def predict_ai_scores(df):
     result_df = pd.concat(all_preds, ignore_index=True)
 
     # ✅ Return_1D 안전하게 생성
-    result_df = add_return_1d_column(result_df)
+    result_df = add_return_columns(result_df)
 
     # 예측 종가 계산
     result_df["예측종가_GB_1D"] = result_df["Close"] * (1 + result_df["Predicted_Return_GB_1D"])
