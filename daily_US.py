@@ -531,7 +531,8 @@ if __name__ == "__main__":
         exit(1)
 
     # Step 1: Run simulation
-    simulation_results_simple, final_assets = simulate_combined_trading_simple_formatted(predicted_df.copy())
+    simulation_results_simple, final_assets = simulate_combined_trading_us_formatted(predicted_df.copy())
+
 
     if simulation_results_simple.empty:
         print("[X] Simulation result is empty.")
