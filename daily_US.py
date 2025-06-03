@@ -448,25 +448,53 @@ def simulate_combined_trading_simple_formatted(df):
 
     return result_df, final_assets
 
+import os
+import pandas as pd
+
 def export_final_portfolios(final_assets):
     os.makedirs("data/final_portfolios", exist_ok=True)
 
     for model, info in final_assets.items():
-        model_data = {
-            "현금 잔액": info["현금 잔액"],
-            "총 자산": info["총 자산"],
-            "보유 종목 수": info["보유 종목 수"]
-        }
+        rows = []
 
-        holdings_df = pd.DataFrame.from_dict(info["보유 종목"], orient='index').reset_index()
-        holdings_df.rename(columns={"index": "티커"}, inplace=True)
+        # 보유 종목
+        for ticker, details in info["보유 종목"].items():
+            rows.append({
+                "모델": model,
+                "종목명": "",  # 필요하면 매핑해서 채우기
+                "티커": ticker,
+                "보유 수량": details["보유 수량"],
+                "현재가": details["현재가"],
+                "평가 금액": details["평가 금액"]
+            })
 
-        file_path = f"data/final_portfolios/{model}_portfolio.xlsx"
-        with pd.ExcelWriter(file_path, engine='openpyxl') as writer:
-            pd.DataFrame([model_data]).to_excel(writer, sheet_name="요약", index=False)
-            holdings_df.to_excel(writer, sheet_name="보유 종목", index=False)
+        # 현금 행 추가
+        rows.append({
+            "모델": model,
+            "종목명": "현금",
+            "티커": "",
+            "보유 수량": "",
+            "현재가": "",
+            "평가 금액": info["현금 잔액"]
+        })
 
-    print("[✓] All final portfolios exported to /data/final_portfolios/")
+        # 총 자산 행 추가
+        rows.append({
+            "모델": model,
+            "종목명": "총 자산",
+            "티커": "",
+            "보유 수량": "",
+            "현재가": "",
+            "평가 금액": info["총 자산"]
+        })
+
+        df = pd.DataFrame(rows)
+        file_path = f"data/final_portfolios/final_portfolio_{model}.csv"
+        df.to_csv(file_path, index=False, encoding="utf-8-sig")
+        print(f"[✓] {model} 포트폴리오 저장 완료 → {file_path}")
+
+    print("\n[✓] 모든 모델의 최종 포트폴리오가 CSV로 저장되었습니다.")
+
 
 
 
@@ -474,20 +502,32 @@ def export_final_portfolios(final_assets):
 # ------------------------
 def plot_prediction_vs_actual(df, model_name, ticker):
     """
-    Compare predicted vs actual close prices for a ticker-model combination.
+    Plot actual vs predicted close prices from April 2025 to today, with MAE.
     """
-    df = df[df["Ticker"] == ticker].copy()
-    df = df[df["Date"] >= pd.to_datetime("2025-05-01")].sort_values("Date")
+    df = df.copy()
+    df["Date"] = pd.to_datetime(df["Date"])  # ✅ 강제 변환
+    df = df[df["Ticker"] == ticker]
+    df = df[df["Date"] >= pd.to_datetime("2025-04-01")].sort_values("Date")
 
     pred_col = f"예측종가_{model_name}"
     if df.empty or pred_col not in df.columns:
         return
 
+    # Rename for display
+    df = df.rename(columns={
+        "Close": "Actual_Close",
+        pred_col: "Predicted_Close"
+    })
+
+    # MAE 계산
+    mae = np.mean(np.abs(df["Predicted_Close"] - df["Actual_Close"]))
+    mae_text = f"MAE: {mae:.2f}"
+
     safe_ticker = ticker.replace("-", "_")
 
     plt.figure(figsize=(12, 6))
-    plt.plot(df["Date"], df["Close"], label="Actual Close", color="blue", linewidth=2)
-    plt.plot(df["Date"], df[pred_col], label=f"Predicted Close ({model_name})", color="orange", linestyle="--", linewidth=2)
+    plt.plot(df["Date"], df["Actual_Close"], label="Actual Close", linewidth=2)
+    plt.plot(df["Date"], df["Predicted_Close"], label=f"Predicted ({model_name})", linestyle="--", linewidth=2)
 
     plt.title(f"{ticker} - {model_name} Prediction vs Actual", fontsize=14)
     plt.xlabel("Date", fontsize=12)
@@ -496,10 +536,20 @@ def plot_prediction_vs_actual(df, model_name, ticker):
     plt.grid(True)
     plt.xticks(rotation=45)
     plt.tight_layout()
+
+    # MAE 삽입
+    plt.gca().text(
+        0.95, 0.95, mae_text,
+        transform=plt.gca().transAxes,
+        fontsize=12,
+        verticalalignment='top',
+        horizontalalignment='right',
+        bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3')
+    )
+
+    os.makedirs("charts", exist_ok=True)
     plt.savefig(f"charts/predicted_vs_actual_{model_name}_{safe_ticker}.png")
     plt.close()
-
-    print("[Step 4] All charts saved → charts/*.png")
 
 # ------------------------
 # 실행
