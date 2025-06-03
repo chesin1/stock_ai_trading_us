@@ -488,33 +488,36 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     # MAE 계산
     mae = np.mean(np.abs(df["Predicted_Close"] - df["Actual_Close"]))
 
-    # 예측 종가 정보
+    # 마지막 날짜 예측 정보
     last_row = df.iloc[-1]
     actual_close = last_row["Actual_Close"]
-    pred_1d = last_row.get("예측종가_GB_1D", np.nan)
-    pred_20d = last_row.get("예측종가_GB_20D", np.nan)
-    pred_lstm = last_row.get("예측종가_Dense_LSTM", np.nan)
 
-    if model_orig == "GB_1D":
+    model_pred_map = {
+        "GB_1D": last_row.get("예측종가_GB_1D", np.nan),
+        "GB_20D": last_row.get("예측종가_GB_20D", np.nan),
+        "Dense_LSTM": last_row.get("예측종가_Dense_LSTM", np.nan)
+    }
+    pred_val = model_pred_map.get(model_orig, np.nan)
+
+    model_label_map = {
+        "GB_1D": "1-day Forecast",
+        "GB_20D": "20-day Forecast",
+        "Dense_LSTM": "LSTM Forecast"
+    }
+    label = model_label_map.get(model_orig, "Forecast")
+
+    if not np.isnan(pred_val):
         info_text = (
-            f"현재 종가: ${actual_close:.2f}\n"
-            f"정확도 (MAE): {mae:.2f}\n"
-            f"1D 예측: ${pred_1d:.2f}" if not np.isnan(pred_1d) else "1D 예측: N/A"
-        )
-    elif model_orig == "GB_20D":
-        info_text = (
-            f"현재 종가: ${actual_close:.2f}\n"
-            f"정확도 (MAE): {mae:.2f}\n"
-            f"20D 예측: ${pred_20d:.2f}" if not np.isnan(pred_20d) else "20D 예측: N/A"
-        )
-    elif model_orig == "Dense_LSTM":
-        info_text = (
-            f"현재 종가: ${actual_close:.2f}\n"
-            f"정확도 (MAE): {mae:.2f}\n"
-            f"LSTM 예측: ${pred_lstm:.2f}" if not np.isnan(pred_lstm) else "LSTM 예측: N/A"
+            f"Current Price: ${actual_close:.2f}\n"
+            f"MAE (Accuracy): {mae:.2f}\n"
+            f"{label}: ${pred_val:.2f}"
         )
     else:
-        info_text = f"현재 종가: ${actual_close:.2f}\n정확도 (MAE): {mae:.2f}"
+        info_text = (
+            f"Current Price: ${actual_close:.2f}\n"
+            f"MAE (Accuracy): {mae:.2f}\n"
+            f"{label}: N/A"
+        )
 
     # 시각화
     safe_ticker = ticker.replace("-", "_")
@@ -530,19 +533,11 @@ def plot_prediction_vs_actual(df, model_orig, model_safe, ticker):
     plt.xticks(rotation=45)
     plt.tight_layout()
 
-    # 안전하게 겹치지 않는 위치 계산
-    def safe_text_position(fig, ax, padding=0.05):
-        fig_width, fig_height = fig.get_size_inches()
-        bbox = ax.get_position()
-        x = bbox.x1 + padding / fig_width
-        y = bbox.y1
-        return x, y
-
-    x, y = safe_text_position(fig, ax)
+    # 텍스트 삽입 (폰트 작게, 왼쪽 상단)
     fig.text(
-        x, y,
+        0.02, 0.98,
         info_text,
-        fontsize=12,
+        fontsize=7,
         verticalalignment='top',
         horizontalalignment='left',
         bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3')
