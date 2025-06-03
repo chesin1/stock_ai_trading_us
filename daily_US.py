@@ -445,14 +445,12 @@ def simulate_combined_trading_simple_formatted(df):
 
     return result_df, final_assets
 
-import os
-import pandas as pd
 
 def export_final_portfolios(final_assets):
     os.makedirs("data/final_portfolios", exist_ok=True)
 
     for model, info in final_assets.items():
-        # 보유 종목이 없으면 경고 메시지 출력, 여전히 포트폴리오 파일은 생성
+        # 보유 종목이 없으면 경고 메시지 출력
         if not info["보유 종목"]:
             print(f"[⚠️] {model} 모델에 보유 종목이 없어서 포트폴리오에 보유 종목이 없습니다.")
         
@@ -462,7 +460,7 @@ def export_final_portfolios(final_assets):
         for ticker, details in info["보유 종목"].items():
             rows.append({
                 "모델": model,
-                "종목명": "",  # 필요하면 매핑해서 채우기
+                "종목명": "",  # 필요하면 채우기
                 "티커": ticker,
                 "보유 수량": details["보유 수량"],
                 "현재가": details["현재가"],
@@ -490,12 +488,15 @@ def export_final_portfolios(final_assets):
         })
 
         df = pd.DataFrame(rows)
-        file_path = f"data/final_portfolios/final_portfolio_{model}.csv"
+
+        # ✅ 저장 파일명 포맷 통일 (예: dense_lstm_portfolio_final.csv)
+        file_safe_model = model.lower().replace("-", "_")
+        file_path = f"data/final_portfolios/{file_safe_model}_portfolio_final.csv"
+
         df.to_csv(file_path, index=False, encoding="utf-8-sig")
         print(f"[✓] {model} 포트폴리오 저장 완료 → {file_path}")
 
     print("\n[✓] 모든 모델의 최종 포트폴리오가 CSV로 저장되었습니다.")
-
 
 
 
@@ -584,17 +585,26 @@ if __name__ == "__main__":
     simulation_results_simple.to_csv(sim_result_path, index=False)
     print(f"[✓] Saved simulation result → {sim_result_path}")
 
-    # Step 3: Save portfolios (Excel)
+    # Step 3: Save portfolios (CSV)
     export_final_portfolios(final_assets)
     print("[✓] Saved final portfolios by model")
 
     # Step 4: Visualization (prediction vs actual)
     os.makedirs("charts", exist_ok=True)
-    for model in ["GB_1D", "GB_20D", "Dense_LSTM"]:
-        col_name = f"예측종가_{model}"
+
+    # 모델 원본명 → 파일명용 이름 매핑
+    model_name_map = {
+        "GB_1D": "gb_1d",
+        "GB_20D": "gb_20d",
+        "Dense_LSTM": "dense_lstm"
+    }
+
+    for model_orig, model_safe in model_name_map.items():
+        col_name = f"예측종가_{model_orig}"
         if col_name in predicted_df.columns:
             for ticker in predicted_df["Ticker"].unique():
-                plot_prediction_vs_actual(predicted_df.copy(), model, ticker)
+                plot_prediction_vs_actual(predicted_df.copy(), model_orig, model_safe, ticker)
+
     print("[✓] Saved prediction vs actual charts → charts/")
 
     # Preview logs
