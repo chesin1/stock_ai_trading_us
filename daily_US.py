@@ -418,6 +418,7 @@ def simulate_combined_trading_simple_formatted(df):
         result_df.to_csv(SIMULATION_FILE_SIMPLE_FORMATTED, index=False, encoding="utf-8-sig")
 
     final_assets = {}
+    
     for model, port in portfolios.items():
         holding_summary = {}
         total_holding_value = 0
@@ -453,7 +454,7 @@ def export_final_portfolios(final_assets):
         # 보유 종목이 없으면 경고 메시지 출력
         if not info["보유 종목"]:
             print(f"[⚠️] {model} 모델에 보유 종목이 없어서 포트폴리오에 보유 종목이 없습니다.")
-        
+
         rows = []
 
         # 보유 종목
@@ -489,14 +490,14 @@ def export_final_portfolios(final_assets):
 
         df = pd.DataFrame(rows)
 
-        # ✅ 저장 파일명 포맷 통일 (예: dense_lstm_portfolio_final.csv)
         file_safe_model = model.lower().replace("-", "_")
         file_path = f"data/final_portfolios/{file_safe_model}_portfolio_final.csv"
-
         df.to_csv(file_path, index=False, encoding="utf-8-sig")
+
         print(f"[✓] {model} 포트폴리오 저장 완료 → {file_path}")
 
     print("\n[✓] 모든 모델의 최종 포트폴리오가 CSV로 저장되었습니다.")
+
 
 
 
