@@ -130,7 +130,8 @@ def build_gb_20d():
 
 def build_dense_lstm(input_shape):
     def custom_loss(y_true, y_pred):
-        mse = tf.keras.losses.mean_squared_error(y_true, y_pred)
+        mse_fn = tf.keras.losses.MeanSquaredError()
+        mse = mse_fn(y_true, y_pred)
         std_penalty = 1e-2 / (tf.math.reduce_std(y_pred) + 1e-6)
         return mse + std_penalty
 
@@ -141,7 +142,7 @@ def build_dense_lstm(input_shape):
         BatchNormalization(),
         Dense(32, activation='relu'),
         Dropout(0.5),
-        Dense(1)  # tanh 제거: 자유롭게 예측하도록
+        Dense(1)  # ✅ tanh 제거 → 자유로운 예측 가능
     ])
     optimizer = tf.keras.optimizers.Adam(clipvalue=1.0)
     model.compile(optimizer=optimizer, loss=custom_loss)
