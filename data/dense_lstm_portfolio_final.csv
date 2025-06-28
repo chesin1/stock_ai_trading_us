@@ -1,5 +1,5 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,CDNS,CDNS,18,305.2,5493.6
-Dense-LSTM,TSLA,TSLA,13,323.63,4207.19
-Dense-LSTM,현금,,,,803.65
-Dense-LSTM,총 자산,,,,10504.44
+Dense-LSTM,SMCI,SMCI,182,47.58,8659.56
+Dense-LSTM,AMD,AMD,40,143.81,5752.4
+Dense-LSTM,현금,,,,101.15
+Dense-LSTM,총 자산,,,,14513.11
