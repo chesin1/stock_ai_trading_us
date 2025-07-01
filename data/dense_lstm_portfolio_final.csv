@@ -1,4 +1,4 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,BRK-B,BRK-B,21,485.77,10201.17
-Dense-LSTM,현금,,,,1750.6
-Dense-LSTM,총 자산,,,,11951.77
+Dense-LSTM,NFLX,NFLX,7,1293.6,9055.2
+Dense-LSTM,현금,,,,1990.23
+Dense-LSTM,총 자산,,,,11045.43
