@@ -1,5 +1,5 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,GOOG,GOOG,41,247.18,10134.38
-Dense-LSTM,GOOGL,GOOGL,18,246.54,4437.72
-Dense-LSTM,현금,,,,148.14
-Dense-LSTM,총 자산,,,,14720.24
+Dense-LSTM,SMCI,SMCI,182,45.82,8339.24
+Dense-LSTM,AMD,AMD,40,159.46,6378.4
+Dense-LSTM,현금,,,,101.15
+Dense-LSTM,총 자산,,,,14818.79
