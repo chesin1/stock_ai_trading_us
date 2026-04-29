@@ -1,6 +1,4 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,NOW,NOW,20,90.49,1809.8
-Dense-LSTM,TSLA,TSLA,7,376.02,2632.14
-Dense-LSTM,AVGO,AVGO,19,399.83,7596.77
-Dense-LSTM,현금,,,,347.0
-Dense-LSTM,총 자산,,,,12385.71
+Dense-LSTM,SMCI,SMCI,205,26.32,5395.6
+Dense-LSTM,현금,,,,2544.1
+Dense-LSTM,총 자산,,,,7939.7
