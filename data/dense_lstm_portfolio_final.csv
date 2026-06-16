@@ -1,6 +1,5 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,NFLX,NFLX,51,80.34,4097.34
-Dense-LSTM,CDNS,CDNS,6,384.96,2309.76
-Dense-LSTM,NOW,NOW,10,102.15,1021.5
-Dense-LSTM,현금,,,,416.49
-Dense-LSTM,총 자산,,,,7845.09
+Dense-LSTM,BRK-B,BRK-B,9,494.95,4454.55
+Dense-LSTM,MSCI,MSCI,6,608.16,3648.96
+Dense-LSTM,현금,,,,1995.52
+Dense-LSTM,총 자산,,,,10099.03
