@@ -1,6 +1,4 @@
 ﻿모델,종목명,티커,보유 수량,현재가,평가 금액
-Dense-LSTM,AMD,AMD,40,620.68,24827.2
-Dense-LSTM,NVDA,NVDA,17,230.48,3918.16
-Dense-LSTM,SMCI,SMCI,121,42.77,5175.17
-Dense-LSTM,현금,,,,205.19
-Dense-LSTM,총 자산,,,,34125.72
+Dense-LSTM,ASML,ASML,8,1780.34,14242.72
+Dense-LSTM,현금,,,,599.75
+Dense-LSTM,총 자산,,,,14842.47
